@@ -344,7 +344,10 @@ def create_pressure_profile_chart(sensor_locations, normal_pressure, drop_pressu
     """
     
     # Create figure with secondary y-axis
-    fig = make_subplots(specs=[[{"secondary_y": True}]])
+    fig = make_subplots(
+        specs=[[{"secondary_y": True}]],
+        subplot_titles=["Pressure Profile Comparison with Elevation Distribution"]
+    )
     
     # Generate smooth line for entire pipeline
     kp_fine = np.linspace(0, pipeline_length, 500)
@@ -516,8 +519,7 @@ def create_pressure_profile_chart(sensor_locations, normal_pressure, drop_pressu
             bordercolor="white",
             borderwidth=2,
             borderpad=4,
-            y=0.5,  # 0.5 = middle (0=bottom, 1=top)
-            yanchor="middle"
+            yshift=15  # Shift up to avoid overlap
         )
     )
     
@@ -2291,10 +2293,11 @@ def main():
     st.markdown("---")
     st.markdown("""
         <div class="footer">
-            <b>FOL - Finding Oil Losses v2.0</b> | Pipeline Leak Detection System <br>
+            <b>FOL - Finding Oil Losses v2.0</b> | Pipeline Leak Detection System with GPS Integration<br>
             Developed by <b>Research and Development Team</b> - PT Pertamina EP Jambi Field<br>
             <br>
             Powered by Machine Learning, IoT Technology & GPS Mapping<br>
+            <i>SKK Migas IOC Digital Hackathon 2025 - 1st Place Winner 🏆</i>
         </div>
     """, unsafe_allow_html=True)
 
