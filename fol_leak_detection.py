@@ -420,7 +420,7 @@ def create_pressure_profile_chart(sensor_locations, normal_pressure, drop_pressu
             y=tolerance_smooth,
             mode='lines',
             name='Tolerance Line (97.5%)',
-            line=dict(color="#00ff51", width=2, dash='dot'),
+            line=dict(color='#0099ff', width=2, dash='dot'),
             hovertemplate='<b>Tolerance (97.5%)</b><br>' +
                          'KP: %{x:.2f} km<br>' +
                          'Pressure: %{y:.2f} psi<br>' +
@@ -565,7 +565,7 @@ def create_pressure_profile_chart(sensor_locations, normal_pressure, drop_pressu
     
     fig.update_layout(
         title=dict(
-            text=f"<b>Pipeline Pressure Profile & Elevation Analysis Jalur {pipeline_name}</b>",
+            text=f"<b>Pipeline Pressure Profile & Elevation Analysis<br><br>{pipeline_name}</b>",
             font=dict(size=18, color='#00d4ff', family='Orbitron'),
             x=0.5,
             xanchor='center'
@@ -895,7 +895,7 @@ def load_elevation_data(file_path):
 # BASE CONFIGURATION
 # ============================================================================
 BASE_CONFIG = {
-    'SUSPICION_WEIGHTS': [0.5, 0.25, 0.25],
+    'SUSPICION_WEIGHTS': [0.50, 0.25, 0.25],
     'UPSTREAM_BIAS_PRIMARY': -2.2,
     'UPSTREAM_BIAS_GRADIENT': -1.8,
     'UPSTREAM_BIAS_INTERP': -2.0,
@@ -904,9 +904,9 @@ BASE_CONFIG = {
     'FLUID_DENSITY': 0.85,
     'FINAL_ESTIMATE_WEIGHTS': {
         'suspicion': 0.25,
-        'interpolation': 0.2,
+        'interpolation': 0.20,
         'gradient': 0.20,
-        'elevation': 0.3,
+        'elevation': 0.30,
         'weighted': 0.05
     }
 }
@@ -1629,7 +1629,7 @@ def main():
         <div class="header-container">
             <h1 class="header-title">🛢️ FOL - Finding Oil Losses v2.0</h1>
             <p class="header-subtitle">
-                Pipeline Leak Detection System<br>
+                Pipeline Leak Detection System with GPS Integration<br>
                 PT Pertamina EP Jambi Field | <b>Research and Development Team</b>
             </p>
         </div>
@@ -1705,20 +1705,28 @@ def main():
     st.markdown("---")
     st.markdown("## 📊 Sensor Data Input")
     
+    # Initialize session state FIRST
+    if 'sensor_values' not in st.session_state:
+        st.session_state.sensor_values = {}
+    if 'load_example_trigger' not in st.session_state:
+        st.session_state.load_example_trigger = False
+    if 'clear_data_trigger' not in st.session_state:
+        st.session_state.clear_data_trigger = False
+    
     # Create button row
     col_btn1, col_btn2, col_space = st.columns([1, 1, 2])
     
     with col_btn1:
-        use_example = st.button("📝 Load Example Data", use_container_width=True)
+        if st.button("📝 Load Example Data", use_container_width=True):
+            st.session_state.load_example_trigger = True
+            st.session_state.clear_data_trigger = False
     
     with col_btn2:
-        clear_data = st.button("🗑️ Clear All Data", use_container_width=True)
+        if st.button("🗑️ Clear All Data", use_container_width=True):
+            st.session_state.clear_data_trigger = True
+            st.session_state.load_example_trigger = False
     
     st.markdown("<br>", unsafe_allow_html=True)
-    
-    # Initialize session state
-    if 'sensor_values' not in st.session_state:
-        st.session_state.sensor_values = {}
     
     # Create table header
     st.markdown("""
@@ -1755,10 +1763,15 @@ def main():
             """, unsafe_allow_html=True)
         
         with col_normal:
-            if use_example:
+            # Determine default value based on button state
+            if st.session_state.load_example_trigger:
                 default_normal = config["example_normal"][i]
-            elif clear_data:
+                # Store in session state
+                st.session_state.sensor_values[f"normal_{selected_pipeline}_{i}"] = default_normal
+            elif st.session_state.clear_data_trigger:
                 default_normal = 0.0
+                # Store in session state
+                st.session_state.sensor_values[f"normal_{selected_pipeline}_{i}"] = 0.0
             else:
                 key = f"normal_{selected_pipeline}_{i}"
                 default_normal = st.session_state.sensor_values.get(key, 0.0)
@@ -1778,10 +1791,15 @@ def main():
             normal_pressure.append(normal_val if normal_val > 0 else None)
         
         with col_drop:
-            if use_example:
+            # Determine default value based on button state
+            if st.session_state.load_example_trigger:
                 default_drop = config["example_drop"][i]
-            elif clear_data:
+                # Store in session state
+                st.session_state.sensor_values[f"drop_{selected_pipeline}_{i}"] = default_drop
+            elif st.session_state.clear_data_trigger:
                 default_drop = 0.0
+                # Store in session state
+                st.session_state.sensor_values[f"drop_{selected_pipeline}_{i}"] = 0.0
             else:
                 key = f"drop_{selected_pipeline}_{i}"
                 default_drop = st.session_state.sensor_values.get(key, 0.0)
@@ -1799,6 +1817,14 @@ def main():
             
             st.session_state.sensor_values[f"drop_{selected_pipeline}_{i}"] = drop_val
             drop_pressure.append(drop_val if drop_val > 0 else None)
+    
+    # Reset button triggers after processing
+    if st.session_state.load_example_trigger:
+        st.session_state.load_example_trigger = False
+        st.rerun()
+    if st.session_state.clear_data_trigger:
+        st.session_state.clear_data_trigger = False
+        st.rerun()
     
     # Validate inputs
     st.markdown("---")
@@ -1975,7 +2001,7 @@ def main():
                             <b>📊 Chart Interpretation:</b><br>
                             • <b style="color: #00d4ff;">Cyan line:</b> Normal operating pressure profile<br>
                             • <b style="color: #ff3366;">Pink line:</b> Pressure during drop/leak event<br>
-                            • <b style="color: #00ff51;">green dotted line:</b> Tolerance threshold (97.5% of normal, 2.5% drop tolerance)<br>
+                            • <b style="color: #0099ff;">Blue dotted line:</b> Tolerance threshold (97.5% of normal, 2.5% drop tolerance)<br>
                             • <b style="color: #7a9ab8;">Gray area:</b> Elevation profile along pipeline<br>
                             • <b style="color: #ff3366;">Dashed red line:</b> Estimated leak location<br>
                             • <b>Markers:</b> Active sensor readings (circle = normal, square = drop)<br>
@@ -1986,6 +2012,18 @@ def main():
                     # === INTERACTIVE MAP VISUALIZATION ===
                     st.markdown("---")
                     st.markdown("## 🗺️ Interactive Pipeline Map")
+                    
+                    st.markdown("""
+                        <div class="info-box">
+                            <b>🎯 Map Features:</b><br>
+                            • 📍 <b>Interactive Navigation:</b> Pan, zoom, and explore the entire pipeline route<br>
+                            • 🛰️ <b>Multiple View Modes:</b> Switch between Street, Satellite, and Topographic views<br>
+                            • 📌 <b>Clickable Markers:</b> Click on sensors, leak location, or zones for detailed info<br>
+                            • 📏 <b>Distance Tool:</b> Measure distances along the pipeline<br>
+                            • 🔍 <b>Fullscreen Mode:</b> Expand map for better visibility<br>
+                            • 🗺️ <b>Color-Coded Zones:</b> Red (Focus), Orange (Critical), Yellow (Primary)
+                        </div>
+                    """, unsafe_allow_html=True)
                     
                     # Create the interactive map
                     pipeline_map = create_interactive_pipeline_map(
@@ -2259,6 +2297,6 @@ def main():
             Powered by Machine Learning, IoT Technology & GPS Mapping<br>
         </div>
     """, unsafe_allow_html=True)
- 
+
 if __name__ == "__main__":
     main()
