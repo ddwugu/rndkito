@@ -565,7 +565,7 @@ def create_pressure_profile_chart(sensor_locations, normal_pressure, drop_pressu
     
     fig.update_layout(
         title=dict(
-            text=f"<b>Pipeline Pressure Profile & Elevation Analysis<br><br>{pipeline_name}</b>",
+            text=f"<b>Pipeline Pressure Profile & Elevation Analysis Line {pipeline_name}</b>",
             font=dict(size=18, color='#00d4ff', family='Orbitron'),
             x=0.5,
             xanchor='center'
