@@ -1710,23 +1710,28 @@ def main():
     # Initialize session state FIRST
     if 'sensor_values' not in st.session_state:
         st.session_state.sensor_values = {}
-    if 'load_example_trigger' not in st.session_state:
-        st.session_state.load_example_trigger = False
-    if 'clear_data_trigger' not in st.session_state:
-        st.session_state.clear_data_trigger = False
+    
+    # Button callback functions
+    def load_example_data():
+        """Load example data into session state"""
+        for i, sensor in enumerate(config["sensors"]):
+            st.session_state[f"normal_{selected_pipeline}_{i}"] = config["example_normal"][i]
+            st.session_state[f"drop_{selected_pipeline}_{i}"] = config["example_drop"][i]
+    
+    def clear_all_data():
+        """Clear all data from session state"""
+        for i, sensor in enumerate(config["sensors"]):
+            st.session_state[f"normal_{selected_pipeline}_{i}"] = 0.0
+            st.session_state[f"drop_{selected_pipeline}_{i}"] = 0.0
     
     # Create button row
     col_btn1, col_btn2, col_space = st.columns([1, 1, 2])
     
     with col_btn1:
-        if st.button("📝 Load Example Data", use_container_width=True):
-            st.session_state.load_example_trigger = True
-            st.session_state.clear_data_trigger = False
+        st.button("📝 Load Example Data", on_click=load_example_data, use_container_width=True)
     
     with col_btn2:
-        if st.button("🗑️ Clear All Data", use_container_width=True):
-            st.session_state.clear_data_trigger = True
-            st.session_state.load_example_trigger = False
+        st.button("🗑️ Clear All Data", on_click=clear_all_data, use_container_width=True)
     
     st.markdown("<br>", unsafe_allow_html=True)
     
@@ -1765,68 +1770,32 @@ def main():
             """, unsafe_allow_html=True)
         
         with col_normal:
-            # Determine default value based on button state
-            if st.session_state.load_example_trigger:
-                default_normal = config["example_normal"][i]
-                # Store in session state
-                st.session_state.sensor_values[f"normal_{selected_pipeline}_{i}"] = default_normal
-            elif st.session_state.clear_data_trigger:
-                default_normal = 0.0
-                # Store in session state
-                st.session_state.sensor_values[f"normal_{selected_pipeline}_{i}"] = 0.0
-            else:
-                key = f"normal_{selected_pipeline}_{i}"
-                default_normal = st.session_state.sensor_values.get(key, 0.0)
-            
+            # Get value directly from session state widget key
             normal_val = st.number_input(
                 f"Normal {i+1}",
                 min_value=0.0,
                 max_value=500.0,
-                value=default_normal,
+                value=st.session_state.get(f"normal_{selected_pipeline}_{i}", 0.0),
                 step=0.01,
                 format="%.2f",
                 key=f"normal_{selected_pipeline}_{i}",
                 label_visibility="collapsed"
             )
-            
-            st.session_state.sensor_values[f"normal_{selected_pipeline}_{i}"] = normal_val
             normal_pressure.append(normal_val if normal_val > 0 else None)
         
         with col_drop:
-            # Determine default value based on button state
-            if st.session_state.load_example_trigger:
-                default_drop = config["example_drop"][i]
-                # Store in session state
-                st.session_state.sensor_values[f"drop_{selected_pipeline}_{i}"] = default_drop
-            elif st.session_state.clear_data_trigger:
-                default_drop = 0.0
-                # Store in session state
-                st.session_state.sensor_values[f"drop_{selected_pipeline}_{i}"] = 0.0
-            else:
-                key = f"drop_{selected_pipeline}_{i}"
-                default_drop = st.session_state.sensor_values.get(key, 0.0)
-            
+            # Get value directly from session state widget key
             drop_val = st.number_input(
                 f"Drop {i+1}",
                 min_value=0.0,
                 max_value=500.0,
-                value=default_drop,
+                value=st.session_state.get(f"drop_{selected_pipeline}_{i}", 0.0),
                 step=0.01,
                 format="%.2f",
                 key=f"drop_{selected_pipeline}_{i}",
                 label_visibility="collapsed"
             )
-            
-            st.session_state.sensor_values[f"drop_{selected_pipeline}_{i}"] = drop_val
             drop_pressure.append(drop_val if drop_val > 0 else None)
-    
-    # Reset button triggers after processing
-    if st.session_state.load_example_trigger:
-        st.session_state.load_example_trigger = False
-        st.rerun()
-    if st.session_state.clear_data_trigger:
-        st.session_state.clear_data_trigger = False
-        st.rerun()
     
     # Validate inputs
     st.markdown("---")
