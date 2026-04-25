@@ -229,7 +229,8 @@ class EnhancedLeakAnalyzer:
             return locations[np.argmax(np.abs(normal_p - drop_p))] + cfg['UPSTREAM_BIAS_PRIMARY']
         
         # Elevation-corrected pressure
-        psi_per_meter = cfg['PSI_PER_METER'] * cfg['FLUID_DENSITY']
+        # FIX: PSI_PER_METER sudah include koreksi SG 0.85 (0.1209 psi/m), tidak dikali FLUID_DENSITY lagi
+        psi_per_meter = cfg['PSI_PER_METER']
         ref_elev = elevations[0]
         elev_corr = (elevations - ref_elev) * psi_per_meter
         
@@ -346,6 +347,7 @@ def create_pressure_profile_chart(sensor_locations, normal_pressure, drop_pressu
     # Create figure with secondary y-axis
     fig = make_subplots(specs=[[{"secondary_y": True}]])
     
+     
     # Generate smooth line for entire pipeline
     kp_fine = np.linspace(0, pipeline_length, 500)
     
@@ -420,7 +422,7 @@ def create_pressure_profile_chart(sensor_locations, normal_pressure, drop_pressu
             y=tolerance_smooth,
             mode='lines',
             name='Tolerance Line (97.5%)',
-            line=dict(color='#0099ff', width=2, dash='dot'),
+            line=dict(color="#00ff51", width=2, dash='dot'),
             hovertemplate='<b>Tolerance (97.5%)</b><br>' +
                          'KP: %{x:.2f} km<br>' +
                          'Pressure: %{y:.2f} psi<br>' +
@@ -478,13 +480,13 @@ def create_pressure_profile_chart(sensor_locations, normal_pressure, drop_pressu
     # === ELEVATION DATA (SECONDARY Y-AXIS) ===
     
     if elevation_df is not None:
-        # Use elevation data directly
+        # Use elevation data directly    
         elev_kp = elevation_df['distance_km'].values
         elev_values = elevation_df['elevation'].values
         
         # Add elevation area plot
         fig.add_trace(
-            go.Scatter(
+            go.Scatter( 
                 x=elev_kp,
                 y=elev_values,
                 mode='lines',
@@ -565,7 +567,7 @@ def create_pressure_profile_chart(sensor_locations, normal_pressure, drop_pressu
     
     fig.update_layout(
         title=dict(
-            text=f"<b>Pipeline Pressure Profile & Elevation Analysis Line {pipeline_name}</b>",
+            text=f"<b>Pipeline Pressure Profile & Elevation Analysis Jalur {pipeline_name}</b>",
             font=dict(size=18, color='#00d4ff', family='Orbitron'),
             x=0.5,
             xanchor='center'
@@ -895,18 +897,20 @@ def load_elevation_data(file_path):
 # BASE CONFIGURATION
 # ============================================================================
 BASE_CONFIG = {
-    'SUSPICION_WEIGHTS': [0.50, 0.25, 0.25],
+    'SUSPICION_WEIGHTS': [0.5, 0.25, 0.25],
     'UPSTREAM_BIAS_PRIMARY': -2.2,
     'UPSTREAM_BIAS_GRADIENT': -1.8,
     'UPSTREAM_BIAS_INTERP': -2.0,
     'UPSTREAM_BIAS_WEIGHTED': -1.8,
-    'PSI_PER_METER': 0.433,
+    # FIX: 0.1209 psi/m = (0.433 psi/ft / 0.3048 m/ft) * SG 0.85 — untuk crude oil
+    # Nilai ini hanya fallback jika .sav gagal load; normalnya di-patch saat runtime
+    'PSI_PER_METER': 0.1209,
     'FLUID_DENSITY': 0.85,
     'FINAL_ESTIMATE_WEIGHTS': {
         'suspicion': 0.25,
-        'interpolation': 0.20,
+        'interpolation': 0.2,
         'gradient': 0.20,
-        'elevation': 0.30,
+        'elevation': 0.3,
         'weighted': 0.05
     }
 }
@@ -1629,7 +1633,7 @@ def main():
         <div class="header-container">
             <h1 class="header-title">🛢️ FOL - Finding Oil Losses v2.0</h1>
             <p class="header-subtitle">
-                Pipeline Leak Detection System with GPS Integration<br>
+                Pipeline Leak Detection System<br>
                 PT Pertamina EP Jambi Field | <b>Research and Development Team</b>
             </p>
         </div>
@@ -1705,33 +1709,20 @@ def main():
     st.markdown("---")
     st.markdown("## 📊 Sensor Data Input")
     
-    # Initialize session state FIRST
-    if 'sensor_values' not in st.session_state:
-        st.session_state.sensor_values = {}
-    
-    # Button callback functions
-    def load_example_data():
-        """Load example data into session state"""
-        for i, sensor in enumerate(config["sensors"]):
-            st.session_state[f"normal_{selected_pipeline}_{i}"] = config["example_normal"][i]
-            st.session_state[f"drop_{selected_pipeline}_{i}"] = config["example_drop"][i]
-    
-    def clear_all_data():
-        """Clear all data from session state"""
-        for i, sensor in enumerate(config["sensors"]):
-            st.session_state[f"normal_{selected_pipeline}_{i}"] = 0.0
-            st.session_state[f"drop_{selected_pipeline}_{i}"] = 0.0
-    
     # Create button row
     col_btn1, col_btn2, col_space = st.columns([1, 1, 2])
     
     with col_btn1:
-        st.button("📝 Load Example Data", on_click=load_example_data, use_container_width=True)
+        use_example = st.button("📝 Load Example Data", use_container_width=True)
     
     with col_btn2:
-        st.button("🗑️ Clear All Data", on_click=clear_all_data, use_container_width=True)
+        clear_data = st.button("🗑️ Clear All Data", use_container_width=True)
     
     st.markdown("<br>", unsafe_allow_html=True)
+    
+    # Initialize session state
+    if 'sensor_values' not in st.session_state:
+        st.session_state.sensor_values = {}
     
     # Create table header
     st.markdown("""
@@ -1768,31 +1759,49 @@ def main():
             """, unsafe_allow_html=True)
         
         with col_normal:
-            # Get value directly from session state widget key
+            if use_example:
+                default_normal = config["example_normal"][i]
+            elif clear_data:
+                default_normal = 0.0
+            else:
+                key = f"normal_{selected_pipeline}_{i}"
+                default_normal = st.session_state.sensor_values.get(key, 0.0)
+            
             normal_val = st.number_input(
                 f"Normal {i+1}",
                 min_value=0.0,
                 max_value=500.0,
-                value=st.session_state.get(f"normal_{selected_pipeline}_{i}", 0.0),
+                value=default_normal,
                 step=0.01,
                 format="%.2f",
                 key=f"normal_{selected_pipeline}_{i}",
                 label_visibility="collapsed"
             )
+            
+            st.session_state.sensor_values[f"normal_{selected_pipeline}_{i}"] = normal_val
             normal_pressure.append(normal_val if normal_val > 0 else None)
         
         with col_drop:
-            # Get value directly from session state widget key
+            if use_example:
+                default_drop = config["example_drop"][i]
+            elif clear_data:
+                default_drop = 0.0
+            else:
+                key = f"drop_{selected_pipeline}_{i}"
+                default_drop = st.session_state.sensor_values.get(key, 0.0)
+            
             drop_val = st.number_input(
                 f"Drop {i+1}",
                 min_value=0.0,
                 max_value=500.0,
-                value=st.session_state.get(f"drop_{selected_pipeline}_{i}", 0.0),
+                value=default_drop,
                 step=0.01,
                 format="%.2f",
                 key=f"drop_{selected_pipeline}_{i}",
                 label_visibility="collapsed"
             )
+            
+            st.session_state.sensor_values[f"drop_{selected_pipeline}_{i}"] = drop_val
             drop_pressure.append(drop_val if drop_val > 0 else None)
     
     # Validate inputs
@@ -1831,16 +1840,32 @@ def main():
                 st.error(f"❌ Failed to load model: {error}")
                 return
             
-            # Load elevation data
+            # Gunakan model_obj dari .sav langsung sebagai analyzer
+            # .sav sudah berisi EnhancedLeakAnalyzer dengan base_config per jalur masing-masing
+            analyzer = model_obj
+
+            # Patch PSI_PER_METER: nilai di .sav = 0.0433 (salah satuan, psi/ft air)
+            # Nilai benar: 0.1209 psi/m untuk crude oil SG 0.85 dalam satuan meter
+            # Rumus: (0.433 / 0.3048) * 0.85 = 0.1209 psi/m
+            analyzer.base_config['PSI_PER_METER'] = 0.1209
+
+            # Load elevation data fresh untuk GPS mapper
+            # Jika berhasil, update elevation_df di analyzer agar pakai data terbaru
             elev_df, elev_error = load_pipeline_elevation(config["elevation_file"])
-            
+
             if elev_df is None:
                 st.warning(f"⚠️ Elevation data tidak tersedia: {elev_error}")
-                st.info("Prediksi akan dilanjutkan tanpa data elevasi dan GPS")
-                analyzer = EnhancedLeakAnalyzer(BASE_CONFIG)
-                gps_mapper = None
+                # FIX BUG 1: cek has_elevation_data DAN elevation_df tidak None sebelum buat GPS mapper
+                if analyzer.has_elevation_data and analyzer.elevation_df is not None:
+                    st.info("Prediksi dilanjutkan menggunakan elevation data bawaan model .sav")
+                    gps_mapper = GPSLocationMapper(analyzer.elevation_df)
+                else:
+                    st.info("Prediksi dilanjutkan tanpa elevation data (pure fallback)")
+                    gps_mapper = None
             else:
-                analyzer = EnhancedLeakAnalyzer(BASE_CONFIG, elev_df)
+                # Update analyzer dengan elevation data fresh
+                analyzer.elevation_df = elev_df
+                analyzer.has_elevation_data = True
                 gps_mapper = GPSLocationMapper(elev_df)
                 st.success("✅ Elevation data dan GPS mapping loaded successfully")
             
@@ -1949,6 +1974,12 @@ def main():
                     st.markdown("---")
                     st.markdown("## 📈 Pressure Profile & Elevation Analysis")
                     
+                    # FIX BUG 5: elev_df sudah di-assign sebelumnya (None jika gagal load)
+                    # gunakan fresh elev_df, fallback ke elevation_df dari .sav untuk chart
+                    chart_elev_df = elev_df if elev_df is not None else (
+                        analyzer.elevation_df if analyzer.has_elevation_data else None
+                    )
+                    
                     # Create the visualization
                     pressure_chart = create_pressure_profile_chart(
                         sensor_locations=active_data["locations"],
@@ -1956,7 +1987,7 @@ def main():
                         drop_pressure=active_data["drop"],
                         estimated_kp=results['final_estimate'],
                         pipeline_length=config['total_length'],
-                        elevation_df=elev_df if elev_df is not None else None,
+                        elevation_df=chart_elev_df,
                         sensor_names=[f"S{i+1}" for i in range(len(active_data["locations"]))],
                         pipeline_name=selected_pipeline
                     )
@@ -1970,7 +2001,7 @@ def main():
                             <b>📊 Chart Interpretation:</b><br>
                             • <b style="color: #00d4ff;">Cyan line:</b> Normal operating pressure profile<br>
                             • <b style="color: #ff3366;">Pink line:</b> Pressure during drop/leak event<br>
-                            • <b style="color: #0099ff;">Blue dotted line:</b> Tolerance threshold (97.5% of normal, 2.5% drop tolerance)<br>
+                            • <b style="color: #00ff51;">green dotted line:</b> Tolerance threshold (97.5% of normal, 2.5% drop tolerance)<br>
                             • <b style="color: #7a9ab8;">Gray area:</b> Elevation profile along pipeline<br>
                             • <b style="color: #ff3366;">Dashed red line:</b> Estimated leak location<br>
                             • <b>Markers:</b> Active sensor readings (circle = normal, square = drop)<br>
@@ -1982,21 +2013,12 @@ def main():
                     st.markdown("---")
                     st.markdown("## 🗺️ Interactive Pipeline Map")
                     
-                    st.markdown("""
-                        <div class="info-box">
-                            <b>🎯 Map Features:</b><br>
-                            • 📍 <b>Interactive Navigation:</b> Pan, zoom, and explore the entire pipeline route<br>
-                            • 🛰️ <b>Multiple View Modes:</b> Switch between Street, Satellite, and Topographic views<br>
-                            • 📌 <b>Clickable Markers:</b> Click on sensors, leak location, or zones for detailed info<br>
-                            • 📏 <b>Distance Tool:</b> Measure distances along the pipeline<br>
-                            • 🔍 <b>Fullscreen Mode:</b> Expand map for better visibility<br>
-                            • 🗺️ <b>Color-Coded Zones:</b> Red (Focus), Orange (Critical), Yellow (Primary)
-                        </div>
-                    """, unsafe_allow_html=True)
+                    # FIX BUG 7: gunakan elevation_df yang valid (fresh xlsx atau bawaan .sav)
+                    map_elev_df = elev_df if elev_df is not None else analyzer.elevation_df
                     
                     # Create the interactive map
                     pipeline_map = create_interactive_pipeline_map(
-                        elevation_df=elev_df,
+                        elevation_df=map_elev_df,
                         gps_mapper=gps_mapper,
                         results=results,
                         active_data=active_data,
@@ -2168,6 +2190,8 @@ def main():
                 st.markdown("---")
                 st.markdown("## 📊 Detection Method Breakdown")
                 
+                # FIX BUG 2: ambil actual weights dari analyzer.base_config (.sav), bukan hardcode
+                fw = analyzer.base_config.get('FINAL_ESTIMATE_WEIGHTS', {})
                 methods_df = pd.DataFrame({
                     "Method": [
                         "Suspicion Index",
@@ -2183,7 +2207,13 @@ def main():
                         f"{results['methods']['elevation']:.2f}",
                         f"{results['methods']['weighted']:.2f}"
                     ],
-                    "Weight": ["30%", "25%", "20%", "15%", "10%"]
+                    "Weight": [
+                        f"{fw.get('suspicion', 0)*100:.0f}%",
+                        f"{fw.get('interpolation', 0)*100:.0f}%",
+                        f"{fw.get('gradient', 0)*100:.0f}%",
+                        f"{fw.get('elevation', 0)*100:.0f}%",
+                        f"{fw.get('weighted', 0)*100:.0f}%"
+                    ]
                 })
                 
                 st.dataframe(methods_df, use_container_width=True, hide_index=True)
@@ -2220,6 +2250,20 @@ def main():
                 st.markdown("---")
                 st.markdown("## 💾 Export Results")
                 
+                # FIX BUG 3: ambil zones langsung dari results (selalu ada, tidak tergantung GPS block)
+                _focus    = results['zones']['focus']
+                _critical = results['zones']['critical']
+                _primary  = results['zones']['primary']
+                
+                # FIX BUG 4: GPS vars default None, baru di-set jika gps_mapper ada
+                _leak_lat, _leak_lon, _maps_link = None, None, None
+                if gps_mapper is not None:
+                    try:
+                        _leak_lat, _leak_lon = gps_mapper.get_coordinates(results['final_estimate'])
+                        _maps_link = gps_mapper.get_google_maps_link(results['final_estimate'], zoom=18)
+                    except Exception:
+                        pass
+                
                 # Create export data
                 export_data = {
                     "Pipeline": selected_pipeline,
@@ -2228,17 +2272,17 @@ def main():
                     "Estimated Location (KP)": f"{results['final_estimate']:.2f}",
                     "Uncertainty (km)": f"{results['estimate_std']:.2f}",
                     "Confidence": results['confidence'],
-                    "Focus Zone": f"KP {focus[0]:.1f} - {focus[1]:.1f}",
-                    "Critical Zone": f"KP {critical[0]:.1f} - {critical[1]:.1f}",
-                    "Primary Zone": f"KP {primary[0]:.1f} - {primary[1]:.1f}"
+                    "Focus Zone": f"KP {_focus[0]:.1f} - {_focus[1]:.1f}",
+                    "Critical Zone": f"KP {_critical[0]:.1f} - {_critical[1]:.1f}",
+                    "Primary Zone": f"KP {_primary[0]:.1f} - {_primary[1]:.1f}"
                 }
                 
                 # Add GPS data if available
-                if gps_mapper is not None:
+                if _leak_lat is not None:
                     export_data.update({
-                        "GPS Latitude": f"{leak_lat:.8f}",
-                        "GPS Longitude": f"{leak_lon:.8f}",
-                        "Google Maps Link": maps_link
+                        "GPS Latitude": f"{_leak_lat:.8f}",
+                        "GPS Longitude": f"{_leak_lon:.8f}",
+                        "Google Maps Link": _maps_link
                     })
                 
                 export_df = pd.DataFrame([export_data])
@@ -2260,12 +2304,12 @@ def main():
     st.markdown("---")
     st.markdown("""
         <div class="footer">
-            <b>FOL - Finding Oil Losses v2.0</b> | Pipeline Leak Detection System<br>
+            <b>FOL - Finding Oil Losses v2.0</b> | Pipeline Leak Detection System <br>
             Developed by <b>Research and Development Team</b> - PT Pertamina EP Jambi Field<br>
             <br>
             Powered by Machine Learning, IoT Technology & GPS Mapping<br>
         </div>
     """, unsafe_allow_html=True)
-
+ 
 if __name__ == "__main__":
     main()
