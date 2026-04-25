@@ -229,7 +229,8 @@ class EnhancedLeakAnalyzer:
             return locations[np.argmax(np.abs(normal_p - drop_p))] + cfg['UPSTREAM_BIAS_PRIMARY']
         
         # Elevation-corrected pressure
-        psi_per_meter = cfg['PSI_PER_METER'] * cfg['FLUID_DENSITY']
+        # FIX: PSI_PER_METER sudah include koreksi SG 0.85 (0.1209 psi/m), tidak dikali FLUID_DENSITY lagi
+        psi_per_meter = cfg['PSI_PER_METER']
         ref_elev = elevations[0]
         elev_corr = (elevations - ref_elev) * psi_per_meter
         
@@ -901,7 +902,9 @@ BASE_CONFIG = {
     'UPSTREAM_BIAS_GRADIENT': -1.8,
     'UPSTREAM_BIAS_INTERP': -2.0,
     'UPSTREAM_BIAS_WEIGHTED': -1.8,
-    'PSI_PER_METER': 0.433,
+    # FIX: 0.1209 psi/m = (0.433 psi/ft / 0.3048 m/ft) * SG 0.85 — untuk crude oil
+    # Nilai ini hanya fallback jika .sav gagal load; normalnya di-patch saat runtime
+    'PSI_PER_METER': 0.1209,
     'FLUID_DENSITY': 0.85,
     'FINAL_ESTIMATE_WEIGHTS': {
         'suspicion': 0.25,
@@ -1837,16 +1840,32 @@ def main():
                 st.error(f"❌ Failed to load model: {error}")
                 return
             
-            # Load elevation data
+            # Gunakan model_obj dari .sav langsung sebagai analyzer
+            # .sav sudah berisi EnhancedLeakAnalyzer dengan base_config per jalur masing-masing
+            analyzer = model_obj
+
+            # Patch PSI_PER_METER: nilai di .sav = 0.0433 (salah satuan, psi/ft air)
+            # Nilai benar: 0.1209 psi/m untuk crude oil SG 0.85 dalam satuan meter
+            # Rumus: (0.433 / 0.3048) * 0.85 = 0.1209 psi/m
+            analyzer.base_config['PSI_PER_METER'] = 0.1209
+
+            # Load elevation data fresh untuk GPS mapper
+            # Jika berhasil, update elevation_df di analyzer agar pakai data terbaru
             elev_df, elev_error = load_pipeline_elevation(config["elevation_file"])
-            
+
             if elev_df is None:
                 st.warning(f"⚠️ Elevation data tidak tersedia: {elev_error}")
-                st.info("Prediksi akan dilanjutkan tanpa data elevasi dan GPS")
-                analyzer = EnhancedLeakAnalyzer(BASE_CONFIG)
-                gps_mapper = None
+                # FIX BUG 1: cek has_elevation_data DAN elevation_df tidak None sebelum buat GPS mapper
+                if analyzer.has_elevation_data and analyzer.elevation_df is not None:
+                    st.info("Prediksi dilanjutkan menggunakan elevation data bawaan model .sav")
+                    gps_mapper = GPSLocationMapper(analyzer.elevation_df)
+                else:
+                    st.info("Prediksi dilanjutkan tanpa elevation data (pure fallback)")
+                    gps_mapper = None
             else:
-                analyzer = EnhancedLeakAnalyzer(BASE_CONFIG, elev_df)
+                # Update analyzer dengan elevation data fresh
+                analyzer.elevation_df = elev_df
+                analyzer.has_elevation_data = True
                 gps_mapper = GPSLocationMapper(elev_df)
                 st.success("✅ Elevation data dan GPS mapping loaded successfully")
             
@@ -1955,6 +1974,12 @@ def main():
                     st.markdown("---")
                     st.markdown("## 📈 Pressure Profile & Elevation Analysis")
                     
+                    # FIX BUG 5: elev_df sudah di-assign sebelumnya (None jika gagal load)
+                    # gunakan fresh elev_df, fallback ke elevation_df dari .sav untuk chart
+                    chart_elev_df = elev_df if elev_df is not None else (
+                        analyzer.elevation_df if analyzer.has_elevation_data else None
+                    )
+                    
                     # Create the visualization
                     pressure_chart = create_pressure_profile_chart(
                         sensor_locations=active_data["locations"],
@@ -1962,7 +1987,7 @@ def main():
                         drop_pressure=active_data["drop"],
                         estimated_kp=results['final_estimate'],
                         pipeline_length=config['total_length'],
-                        elevation_df=elev_df if elev_df is not None else None,
+                        elevation_df=chart_elev_df,
                         sensor_names=[f"S{i+1}" for i in range(len(active_data["locations"]))],
                         pipeline_name=selected_pipeline
                     )
@@ -1988,9 +2013,12 @@ def main():
                     st.markdown("---")
                     st.markdown("## 🗺️ Interactive Pipeline Map")
                     
+                    # FIX BUG 7: gunakan elevation_df yang valid (fresh xlsx atau bawaan .sav)
+                    map_elev_df = elev_df if elev_df is not None else analyzer.elevation_df
+                    
                     # Create the interactive map
                     pipeline_map = create_interactive_pipeline_map(
-                        elevation_df=elev_df,
+                        elevation_df=map_elev_df,
                         gps_mapper=gps_mapper,
                         results=results,
                         active_data=active_data,
@@ -2162,6 +2190,8 @@ def main():
                 st.markdown("---")
                 st.markdown("## 📊 Detection Method Breakdown")
                 
+                # FIX BUG 2: ambil actual weights dari analyzer.base_config (.sav), bukan hardcode
+                fw = analyzer.base_config.get('FINAL_ESTIMATE_WEIGHTS', {})
                 methods_df = pd.DataFrame({
                     "Method": [
                         "Suspicion Index",
@@ -2177,7 +2207,13 @@ def main():
                         f"{results['methods']['elevation']:.2f}",
                         f"{results['methods']['weighted']:.2f}"
                     ],
-                    "Weight": ["30%", "25%", "20%", "15%", "10%"]
+                    "Weight": [
+                        f"{fw.get('suspicion', 0)*100:.0f}%",
+                        f"{fw.get('interpolation', 0)*100:.0f}%",
+                        f"{fw.get('gradient', 0)*100:.0f}%",
+                        f"{fw.get('elevation', 0)*100:.0f}%",
+                        f"{fw.get('weighted', 0)*100:.0f}%"
+                    ]
                 })
                 
                 st.dataframe(methods_df, use_container_width=True, hide_index=True)
@@ -2214,6 +2250,20 @@ def main():
                 st.markdown("---")
                 st.markdown("## 💾 Export Results")
                 
+                # FIX BUG 3: ambil zones langsung dari results (selalu ada, tidak tergantung GPS block)
+                _focus    = results['zones']['focus']
+                _critical = results['zones']['critical']
+                _primary  = results['zones']['primary']
+                
+                # FIX BUG 4: GPS vars default None, baru di-set jika gps_mapper ada
+                _leak_lat, _leak_lon, _maps_link = None, None, None
+                if gps_mapper is not None:
+                    try:
+                        _leak_lat, _leak_lon = gps_mapper.get_coordinates(results['final_estimate'])
+                        _maps_link = gps_mapper.get_google_maps_link(results['final_estimate'], zoom=18)
+                    except Exception:
+                        pass
+                
                 # Create export data
                 export_data = {
                     "Pipeline": selected_pipeline,
@@ -2222,17 +2272,17 @@ def main():
                     "Estimated Location (KP)": f"{results['final_estimate']:.2f}",
                     "Uncertainty (km)": f"{results['estimate_std']:.2f}",
                     "Confidence": results['confidence'],
-                    "Focus Zone": f"KP {focus[0]:.1f} - {focus[1]:.1f}",
-                    "Critical Zone": f"KP {critical[0]:.1f} - {critical[1]:.1f}",
-                    "Primary Zone": f"KP {primary[0]:.1f} - {primary[1]:.1f}"
+                    "Focus Zone": f"KP {_focus[0]:.1f} - {_focus[1]:.1f}",
+                    "Critical Zone": f"KP {_critical[0]:.1f} - {_critical[1]:.1f}",
+                    "Primary Zone": f"KP {_primary[0]:.1f} - {_primary[1]:.1f}"
                 }
                 
                 # Add GPS data if available
-                if gps_mapper is not None:
+                if _leak_lat is not None:
                     export_data.update({
-                        "GPS Latitude": f"{leak_lat:.8f}",
-                        "GPS Longitude": f"{leak_lon:.8f}",
-                        "Google Maps Link": maps_link
+                        "GPS Latitude": f"{_leak_lat:.8f}",
+                        "GPS Longitude": f"{_leak_lon:.8f}",
+                        "Google Maps Link": _maps_link
                     })
                 
                 export_df = pd.DataFrame([export_data])
