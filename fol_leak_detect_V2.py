@@ -1,4 +1,4 @@
-import os, math
+import os, math, json
 import streamlit as st
 import numpy as np
 import pandas as pd
@@ -22,8 +22,6 @@ st.set_page_config(
 
 # ─────────────────────────────────────────────────────────────────────────────
 # PIPELINE REGISTRY
-# Setiap jalur punya: params, sensor_locations (default KP), xlsx elevasi,
-# dan historical_data (kosong untuk sekarang, isi nanti kalau ada ground truth)
 # ─────────────────────────────────────────────────────────────────────────────
 
 PIPELINES = {
@@ -41,9 +39,64 @@ PIPELINES = {
         "sensor_kp":      [0.0, 7.8, 15.4],
         "default_normal": [150.727, 125.920, 84.037],
         "default_drop":   [143.778, 104.540, 64.385],
-        # Isi kalau ada kasus terkonfirmasi:
-        # {"sensor_normal": [...], "sensor_drop": [...], "actual_leak_km": X}
-        "historical_data": [],
+        "historical_data": [
+            {"sensor_normal": [160.8175, 104.8108, 81.84457], "sensor_drop": [152.8199, 99.7742, 79.28205], "actual_leak_km": 0.326186},
+{"sensor_normal": [160.8175, 104.8108, 81.84457], "sensor_drop": [152.9499, 99.77503, 79.28241], "actual_leak_km": 0.6793516},
+{"sensor_normal": [160.8175, 104.8108, 81.84457], "sensor_drop": [153.0566, 99.77572, 79.28272], "actual_leak_km": 0.9732918},
+{"sensor_normal": [160.8175, 104.8108, 81.84457], "sensor_drop": [153.1857, 99.77657, 79.28309], "actual_leak_km": 1.326855},
+{"sensor_normal": [160.8175, 104.8108, 81.84457], "sensor_drop": [153.2781, 99.77718, 79.28336], "actual_leak_km": 1.584427},
+{"sensor_normal": [160.8175, 104.8108, 81.84457], "sensor_drop": [153.3558, 99.7777, 79.28359], "actual_leak_km": 1.795595},
+{"sensor_normal": [160.8175, 104.8108, 81.84457], "sensor_drop": [153.4432, 99.7783, 79.28386], "actual_leak_km": 2.033163},
+{"sensor_normal": [160.8175, 104.8108, 81.84457], "sensor_drop": [153.513, 99.77877, 79.28407], "actual_leak_km": 2.227521},
+{"sensor_normal": [160.8175, 104.8108, 81.84457], "sensor_drop": [153.5943, 99.77934, 79.28432], "actual_leak_km": 2.452151},
+{"sensor_normal": [160.8175, 104.8108, 81.84457], "sensor_drop": [153.6583, 99.77978, 79.28452], "actual_leak_km": 2.631753},
+{"sensor_normal": [160.8175, 104.8108, 81.84457], "sensor_drop": [153.7273, 99.78027, 79.28473], "actual_leak_km": 2.823349},
+{"sensor_normal": [160.8175, 104.8108, 81.84457], "sensor_drop": [153.7912, 99.78073, 79.28493], "actual_leak_km": 2.998343},
+{"sensor_normal": [160.8175, 104.8108, 81.84457], "sensor_drop": [153.881, 99.78137, 79.28522], "actual_leak_km": 3.246884},
+{"sensor_normal": [160.8175, 104.8108, 81.84457], "sensor_drop": [153.9697, 99.78202, 79.2855], "actual_leak_km": 3.492402},
+{"sensor_normal": [160.8175, 104.8108, 81.84457], "sensor_drop": [154.0905, 99.7829, 79.28589], "actual_leak_km": 3.825967},
+{"sensor_normal": [160.8175, 104.8108, 81.84457], "sensor_drop": [154.1897, 99.78365, 79.28622], "actual_leak_km": 4.097674},
+{"sensor_normal": [160.8175, 104.8108, 81.84457], "sensor_drop": [154.2709, 99.78426, 79.28649], "actual_leak_km": 4.322953},
+{"sensor_normal": [160.8175, 104.8108, 81.84457], "sensor_drop": [154.3977, 99.78523, 79.28692], "actual_leak_km": 4.673846},
+{"sensor_normal": [160.8175, 104.8108, 81.84457], "sensor_drop": [154.479, 99.78586, 79.2872], "actual_leak_km": 4.898384},
+{"sensor_normal": [160.8175, 104.8108, 81.84457], "sensor_drop": [154.5702, 99.78657, 79.28752], "actual_leak_km": 5.153214},
+{"sensor_normal": [160.8175, 104.8108, 81.84457], "sensor_drop": [154.664, 99.78732, 79.28785], "actual_leak_km": 5.411913},
+{"sensor_normal": [160.8175, 104.8108, 81.84457], "sensor_drop": [154.7541, 99.78804, 79.28816], "actual_leak_km": 5.663462},
+{"sensor_normal": [160.8175, 104.8108, 81.84457], "sensor_drop": [154.8314, 99.78866, 79.28844], "actual_leak_km": 5.877998},
+{"sensor_normal": [160.8175, 104.8108, 81.84457], "sensor_drop": [154.9096, 99.7893, 79.28872], "actual_leak_km": 6.093843},
+{"sensor_normal": [160.8175, 104.8108, 81.84457], "sensor_drop": [155.0056, 99.7901, 79.28908], "actual_leak_km": 6.359372},
+{"sensor_normal": [160.8175, 104.8108, 81.84457], "sensor_drop": [155.0981, 99.79087, 79.28942], "actual_leak_km": 6.615817},
+{"sensor_normal": [160.8175, 104.8108, 81.84457], "sensor_drop": [155.1768, 99.79154, 79.28971], "actual_leak_km": 6.836113},
+{"sensor_normal": [160.8175, 104.8108, 81.84457], "sensor_drop": [155.2799, 99.79242, 79.2901], "actual_leak_km": 7.124203},
+{"sensor_normal": [160.8175, 104.8108, 81.84457], "sensor_drop": [155.3549, 99.79307, 79.29039], "actual_leak_km": 7.331589},
+{"sensor_normal": [160.8175, 104.8108, 81.84457], "sensor_drop": [155.4654, 99.79403, 79.29081], "actual_leak_km": 7.640023},
+{"sensor_normal": [160.8175, 104.8108, 81.84457], "sensor_drop": [155.5756, 99.54901, 79.29125], "actual_leak_km": 7.949307},
+{"sensor_normal": [160.8175, 104.8108, 81.84457], "sensor_drop": [155.6746, 99.64835, 79.29164], "actual_leak_km": 8.224929},
+{"sensor_normal": [160.8175, 104.8108, 81.84457], "sensor_drop": [155.7814, 99.75551, 79.29207], "actual_leak_km": 8.525485},
+{"sensor_normal": [160.8175, 104.8108, 81.84457], "sensor_drop": [155.8659, 99.84039, 79.29241], "actual_leak_km": 8.759501},
+{"sensor_normal": [160.8175, 104.8108, 81.84457], "sensor_drop": [155.9494, 99.92423, 79.29275], "actual_leak_km": 8.994307},
+{"sensor_normal": [160.8175, 104.8108, 81.84457], "sensor_drop": [156.1356, 100.1111, 79.29353], "actual_leak_km": 9.51244},
+{"sensor_normal": [160.8175, 104.8108, 81.84457], "sensor_drop": [156.4228, 100.3994, 79.29477], "actual_leak_km": 10.3205},
+{"sensor_normal": [160.8175, 104.8108, 81.84457], "sensor_drop": [156.6652, 100.6427, 79.29584], "actual_leak_km": 11.00042},
+{"sensor_normal": [160.8175, 104.8108, 81.84457], "sensor_drop": [156.8786, 100.8569, 79.29681], "actual_leak_km": 11.6037},
+{"sensor_normal": [160.8175, 104.8108, 81.84457], "sensor_drop": [157.0863, 101.0654, 79.29778], "actual_leak_km": 12.19095},
+{"sensor_normal": [160.8175, 104.8108, 81.84457], "sensor_drop": [157.3742, 101.3544, 79.29917], "actual_leak_km": 13.00875},
+{"sensor_normal": [160.8175, 104.8108, 81.84457], "sensor_drop": [157.6098, 101.5908, 79.30034], "actual_leak_km": 13.67987},
+{"sensor_normal": [160.8175, 104.8108, 81.84457], "sensor_drop": [157.8934, 101.8756, 79.3018], "actual_leak_km": 14.49398},
+{"sensor_normal": [160.8175, 104.8108, 81.84457], "sensor_drop": [158.1482, 102.1313, 79.30315], "actual_leak_km": 15.22949},
+{"sensor_normal": [160.8175, 104.8108, 81.84457], "sensor_drop": [158.4188, 102.403, 79.42869], "actual_leak_km": 16.01354},
+{"sensor_normal": [160.8175, 104.8108, 81.84457], "sensor_drop": [158.6288, 102.6138, 79.64022], "actual_leak_km": 16.62484},
+{"sensor_normal": [160.8175, 104.8108, 81.84457], "sensor_drop": [158.8568, 102.8427, 79.86983], "actual_leak_km": 17.29128},
+{"sensor_normal": [160.8175, 104.8108, 81.84457], "sensor_drop": [159.4048, 103.3927, 80.42174], "actual_leak_km": 18.08981},
+{"sensor_normal": [160.8175, 104.8108, 81.84457], "sensor_drop": [160.1113, 104.1019, 81.13327], "actual_leak_km": 18.86883},
+{"sensor_normal": [160.8175, 104.8108, 81.84457], "sensor_drop": [160.1484, 104.1392, 81.1707], "actual_leak_km": 19.43529},
+{"sensor_normal": [160.8175, 104.8108, 81.84457], "sensor_drop": [160.7299, 104.7229, 81.75634], "actual_leak_km": 20.03834},
+{"sensor_normal": [160.8175, 104.8108, 81.84457], "sensor_drop": [160.689, 104.6818, 81.71511], "actual_leak_km": 20.63751},
+{"sensor_normal": [160.8175, 104.8108, 81.84457], "sensor_drop": [160.6287, 104.6213, 81.6544], "actual_leak_km": 21.15137},
+{"sensor_normal": [160.8175, 104.8108, 81.84457], "sensor_drop": [160.4927, 104.4848, 81.51748], "actual_leak_km": 21.7111},
+{"sensor_normal": [160.8175, 104.8108, 81.84457], "sensor_drop": [160.6771, 104.6699, 81.7032], "actual_leak_km": 22.17839},
+{"sensor_normal": [160.8175, 104.8108, 81.84457], "sensor_drop": [160.8152, 104.8085, 81.84223], "actual_leak_km": 22.74028},
+        ],
     },
 
     # ── KTT → KAS ──────────────────────────────────────────────────────────
@@ -91,7 +144,58 @@ PIPELINES = {
         "sensor_kp":      [0.0, 7.14, 15.4, 19.7],
         "default_normal": [136.0, 112.14, 95.4, 37.1],
         "default_drop":   [133.0, 110.10, 82.5, 34.5],
-        "historical_data": [],
+        "historical_data": [
+            {"sensor_normal": [135.8834, 114.9538, 102.3444, 47.29846], "sensor_drop": [129.1384, 109.2147, 99.09235, 45.30607], "actual_leak_km": 0.19},
+            {"sensor_normal": [135.8834, 114.9538, 102.3444, 47.29846], "sensor_drop": [129.129, 109.1899, 99.09159, 45.30567],  "actual_leak_km": 0.66},
+            {"sensor_normal": [135.8834, 114.9538, 102.3444, 47.29846], "sensor_drop": [129.2544, 109.1923, 99.08595, 45.30841], "actual_leak_km": 1.04},
+            {"sensor_normal": [135.8834, 114.9538, 102.3444, 47.29846], "sensor_drop": [129.3779, 109.1905, 99.0852, 45.30802],  "actual_leak_km": 1.443918},
+            {"sensor_normal": [135.8834, 114.9538, 102.3444, 47.29846], "sensor_drop": [129.4908, 109.1887, 99.08447, 45.30764], "actual_leak_km": 1.81},
+            {"sensor_normal": [135.8834, 114.9538, 102.3444, 47.29846], "sensor_drop": [129.6091, 109.1868, 99.08368, 45.30723], "actual_leak_km": 2.218645},
+            {"sensor_normal": [135.8834, 114.9538, 102.3444, 47.29846], "sensor_drop": [129.7372, 109.1846, 99.08277, 45.30676], "actual_leak_km": 2.640896},
+            {"sensor_normal": [135.8834, 114.9538, 102.3444, 47.29846], "sensor_drop": [129.9025, 109.1815, 99.08154, 45.30613], "actual_leak_km": 3.185078},
+            {"sensor_normal": [135.8834, 114.9538, 102.3444, 47.29846], "sensor_drop": [130.0183, 109.1793, 99.08062, 45.30565], "actual_leak_km": 3.571016},
+            {"sensor_normal": [135.8834, 114.9538, 102.3444, 47.29846], "sensor_drop": [130.1614, 109.1764, 99.07944, 45.30504], "actual_leak_km": 4.044527},
+            {"sensor_normal": [135.8834, 114.9538, 102.3444, 47.29846], "sensor_drop": [130.3284, 109.1728, 99.07797, 45.30428], "actual_leak_km": 4.597122},
+            {"sensor_normal": [135.8834, 114.9538, 102.3444, 47.29846], "sensor_drop": [130.459, 109.1698, 99.07676, 45.30366],  "actual_leak_km": 5.029447},
+            {"sensor_normal": [135.8834, 114.9538, 102.3444, 47.29846], "sensor_drop": [130.5849, 109.1668, 99.07554, 45.30302], "actual_leak_km": 5.451966},
+            {"sensor_normal": [135.8834, 114.9538, 102.3444, 47.29846], "sensor_drop": [130.7116, 109.1637, 99.07425, 45.30236], "actual_leak_km": 5.875695},
+            {"sensor_normal": [135.8834, 114.9538, 102.3444, 47.29846], "sensor_drop": [130.8726, 109.1595, 99.07253, 45.30147], "actual_leak_km": 6.409739},
+            {"sensor_normal": [135.8834, 114.9538, 102.3444, 47.29846], "sensor_drop": [131.0199, 109.1554, 99.07087, 45.30062], "actual_leak_km": 6.899383},
+            {"sensor_normal": [135.8834, 114.9538, 102.3444, 47.29846], "sensor_drop": [131.1777, 109.1513, 99.06901, 45.29965], "actual_leak_km": 7.423428},
+            {"sensor_normal": [135.8834, 114.9538, 102.3444, 47.29846], "sensor_drop": [131.3742, 109.346, 99.06654, 45.29838],  "actual_leak_km": 8.077277},
+            {"sensor_normal": [135.8834, 114.9538, 102.3444, 47.29846], "sensor_drop": [131.4894, 109.4603, 99.06502, 45.29759], "actual_leak_km": 8.461005},
+            {"sensor_normal": [135.8834, 114.9538, 102.3444, 47.29846], "sensor_drop": [127.5597, 109.6244, 99.06766, 45.2933],  "actual_leak_km": 9.023736},
+            {"sensor_normal": [135.8834, 114.9538, 102.3444, 47.29846], "sensor_drop": [131.8165, 109.7893, 99.06524, 45.29205], "actual_leak_km": 9.572197},
+            {"sensor_normal": [135.8834, 114.9538, 102.3444, 47.29846], "sensor_drop": [132.0263, 109.9972, 99.06202, 45.29038], "actual_leak_km": 10.26639},
+            {"sensor_normal": [135.8834, 114.9538, 102.3444, 47.29846], "sensor_drop": [132.1995, 110.1689, 99.0592, 45.28892],  "actual_leak_km": 10.84183},
+            {"sensor_normal": [135.8834, 114.9538, 102.3444, 47.29846], "sensor_drop": [132.2903, 110.2589, 99.05766, 45.28813], "actual_leak_km": 11.13684},
+            {"sensor_normal": [135.8834, 114.9538, 102.3444, 47.29846], "sensor_drop": [132.4577, 110.4247, 99.05471, 45.28661], "actual_leak_km": 11.69156},
+            {"sensor_normal": [135.8834, 114.9538, 102.3444, 47.29846], "sensor_drop": [132.6274, 110.5929, 99.05158, 45.28498], "actual_leak_km": 12.24864},
+            {"sensor_normal": [135.8834, 114.9538, 102.3444, 47.29846], "sensor_drop": [132.8313, 110.795, 99.0476, 45.28293],   "actual_leak_km": 12.92253},
+            {"sensor_normal": [135.8834, 114.9538, 102.3444, 47.29846], "sensor_drop": [130.2817, 108.2681, 96.84286, 43.93457], "actual_leak_km": 13.34276},
+            {"sensor_normal": [135.8834, 114.9538, 102.3444, 47.29846], "sensor_drop": [133.0678, 111.0293, 99.04269, 45.28039], "actual_leak_km": 13.69977},
+            {"sensor_normal": [135.8834, 114.9538, 102.3444, 47.29846], "sensor_drop": [133.2177, 111.178, 99.03941, 45.27869],  "actual_leak_km": 14.19671},
+            {"sensor_normal": [135.8834, 114.9538, 102.3444, 47.29846], "sensor_drop": [133.4125, 111.371, 99.03493, 45.27638],  "actual_leak_km": 14.83243},
+            {"sensor_normal": [135.8834, 114.9538, 102.3444, 47.29846], "sensor_drop": [133.6113, 111.568, 98.91361, 45.27388],  "actual_leak_km": 15.48631},
+            {"sensor_normal": [135.8834, 114.9538, 102.3444, 47.29846], "sensor_drop": [133.8166, 111.7714, 99.19651, 45.27116], "actual_leak_km": 16.16115},
+            {"sensor_normal": [135.8834, 114.9538, 102.3444, 47.29846], "sensor_drop": [133.9308, 111.8846, 99.30847, 45.26958], "actual_leak_km": 16.54004},
+            {"sensor_normal": [135.8834, 114.9538, 102.3444, 47.29846], "sensor_drop": [134.0082, 111.9613, 99.38435, 45.26848], "actual_leak_km": 16.79705},
+            {"sensor_normal": [135.8834, 114.9538, 102.3444, 47.29846], "sensor_drop": [134.0368, 111.9897, 99.4124, 45.26807],  "actual_leak_km": 16.88714},
+            {"sensor_normal": [135.8834, 114.9538, 102.3444, 47.29846], "sensor_drop": [134.2497, 112.2006, 99.62107, 45.2649],  "actual_leak_km": 17.58975},
+            {"sensor_normal": [135.8834, 114.9538, 102.3444, 47.29846], "sensor_drop": [134.4277, 112.377, 99.79556, 45.26212],  "actual_leak_km": 18.17152},
+            {"sensor_normal": [135.8834, 114.9538, 102.3444, 47.29846], "sensor_drop": [134.5942, 112.5421, 99.95882, 45.25939], "actual_leak_km": 18.72424},
+            {"sensor_normal": [135.8834, 114.9538, 102.3444, 47.29846], "sensor_drop": [134.7753, 112.7214, 100.1363, 45.25628], "actual_leak_km": 19.32402},
+            {"sensor_normal": [135.8834, 114.9538, 102.3444, 47.29846], "sensor_drop": [134.9299, 112.8747, 100.2878, 45.25145], "actual_leak_km": 19.83042},
+            {"sensor_normal": [135.8834, 114.9538, 102.3444, 47.29846], "sensor_drop": [135.1869, 113.1294, 100.5398, 45.50226], "actual_leak_km": 20.67746},
+            {"sensor_normal": [135.8834, 114.9538, 102.3444, 47.29846], "sensor_drop": [135.4188, 113.3591, 100.767, 45.72846],  "actual_leak_km": 21.43871},
+            {"sensor_normal": [135.8834, 114.9538, 102.3444, 47.29846], "sensor_drop": [136.7782, 114.7062, 102.0994, 47.05466], "actual_leak_km": 22.19519},
+            {"sensor_normal": [135.8834, 114.9538, 102.3444, 47.29846], "sensor_drop": [136.8287, 114.7563, 102.149, 47.10399],  "actual_leak_km": 22.9775},
+            {"sensor_normal": [135.8834, 114.9538, 102.3444, 47.29846], "sensor_drop": [136.8685, 114.7957, 102.188, 47.14282],  "actual_leak_km": 23.55302},
+            {"sensor_normal": [135.8834, 114.9538, 102.3444, 47.29846], "sensor_drop": [136.9132, 114.84, 102.2318, 47.18638],   "actual_leak_km": 24.57666},
+            {"sensor_normal": [135.8834, 114.9538, 102.3444, 47.29846], "sensor_drop": [136.9415, 114.868, 102.2595, 47.21399],  "actual_leak_km": 24.98622},
+            {"sensor_normal": [135.8834, 114.9538, 102.3444, 47.29846], "sensor_drop": [136.9678, 114.894, 102.2852, 47.2396],   "actual_leak_km": 25.61823},
+            {"sensor_normal": [135.8834, 114.9538, 102.3444, 47.29846], "sensor_drop": [137.0144, 114.9403, 102.331, 47.28515],  "actual_leak_km": 26.36897},
+        ],
     },
 
     # ── BTJ → BJG ──────────────────────────────────────────────────────────
@@ -126,10 +230,6 @@ def haversine(lat1, lon1, lat2, lon2):
 
 @st.cache_data
 def load_coords(xlsx_filename: str) -> list:
-    """
-    Cari xlsx di: folder app → uploads sandbox.
-    Return list of {km, lat, lon, elev}.
-    """
     candidates = [
         os.path.join(os.path.dirname(os.path.abspath(__file__)), xlsx_filename),
         os.path.join(os.getcwd(), xlsx_filename),
@@ -178,20 +278,23 @@ def get_latlon_at_km(coords: list, target_km: float):
 
 # ─────────────────────────────────────────────────────────────────────────────
 # CALIBRATION
+# FIX: historical_data di-pass sebagai tuple of JSON strings (hashable),
+#      lalu di-parse balik ke dict di dalam fungsi.
 # ─────────────────────────────────────────────────────────────────────────────
 
 @st.cache_data
-def build_calibration(historical_data: tuple, sensor_locs_tuple: tuple):
+def build_calibration(historical_json_tuple: tuple, sensor_locs_tuple: tuple):
     """
-    historical_data: tuple of dicts (di-hash oleh st.cache_data via tuple)
-    Return calibration dict or None.
+    historical_json_tuple : tuple of JSON strings — tiap string = 1 record dict.
+    sensor_locs_tuple     : tuple of float KP locations.
     """
-    historical_data = list(historical_data)
-    if not historical_data:
+    # ── Konversi balik ke list of dict ──
+    if not historical_json_tuple:
         return None
+    historical_data = [json.loads(s) for s in historical_json_tuple]
 
     sensor_locs = np.array(sensor_locs_tuple)
-    method_keys = ['suspicion_index','gradient','region','interpolation','weighted','transition']
+    method_keys = ['suspicion_index', 'gradient', 'region', 'interpolation', 'weighted', 'transition']
     errors = {k: [] for k in method_keys}
 
     for rec in historical_data:
@@ -200,9 +303,12 @@ def build_calibration(historical_data: tuple, sensor_locs_tuple: tuple):
         actual   = float(rec['actual_leak_km'])
         n = min(len(norm_arr), len(drop_arr), len(sensor_locs))
         locs_ = sensor_locs[:n]
-        norm_ = norm_arr[:n]; drop_ = drop_arr[:n]
+        norm_ = norm_arr[:n]
+        drop_ = drop_arr[:n]
         mask  = ~((norm_ == 0) & (drop_ == 0))
-        locs_ = locs_[mask]; norm_ = norm_[mask]; drop_ = drop_[mask]
+        locs_ = locs_[mask]
+        norm_ = norm_[mask]
+        drop_ = drop_[mask]
         if len(locs_) < 2:
             continue
 
@@ -234,8 +340,13 @@ def build_calibration(historical_data: tuple, sensor_locs_tuple: tuple):
     return {'n_samples': len(historical_data), 'bias': bias, 'mae': mae, 'weights': weights}
 
 
+def make_historical_json_tuple(historical_data: list) -> tuple:
+    """Serialisasi list of dict ke tuple of JSON strings untuk st.cache_data."""
+    return tuple(json.dumps(d, sort_keys=True) for d in historical_data)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
-# ANALYZER CLASS v4
+# ANALYZER CLASS
 # ─────────────────────────────────────────────────────────────────────────────
 
 class PipelineLeakAnalyzer:
@@ -260,7 +371,8 @@ class PipelineLeakAnalyzer:
     def calculate_suspicion_index(self):
         si = np.zeros(self.n_sensors)
         for i in range(self.n_sensors):
-            df = self.abs_delta_p[i]; rf = self.pressure_ratio[i]
+            df = self.abs_delta_p[i]
+            rf = self.pressure_ratio[i]
             if 0 < i < self.n_sensors - 1:
                 nf = max(0.0, df - (self.abs_delta_p[i-1] + self.abs_delta_p[i+1]) / 2)
             elif i == 0:
@@ -274,7 +386,8 @@ class PipelineLeakAnalyzer:
         ng, dg, chg, locs = [], [], [], []
         for i in range(self.n_sensors - 1):
             dist = self.locations[i+1] - self.locations[i]
-            if dist == 0: continue
+            if dist == 0:
+                continue
             n = (self.normal_p[i+1] - self.normal_p[i]) / dist
             d = (self.drop_p[i+1]   - self.drop_p[i])   / dist
             ng.append(n); dg.append(d); chg.append(abs(n - d))
@@ -283,8 +396,10 @@ class PipelineLeakAnalyzer:
 
     def region_analysis(self, n_regions=5):
         mn, mx = self.locations.min(), self.locations.max()
-        if mn == mx: return [{'name':'Region 1','start':mn,'end':mx,'center':mn,
-                               'score':0,'avg_delta':0,'max_delta':0,'avg_ratio':0,'n_sensors':self.n_sensors}]
+        if mn == mx:
+            return [{'name': 'Region 1', 'start': mn, 'end': mx, 'center': mn,
+                     'score': 0, 'avg_delta': 0, 'max_delta': 0, 'avg_ratio': 0,
+                     'n_sensors': self.n_sensors}]
         rs = (mx - mn) / n_regions
         regions = []
         for i in range(n_regions):
@@ -293,13 +408,16 @@ class PipelineLeakAnalyzer:
             if np.any(mask):
                 ad = float(np.mean(self.abs_delta_p[mask]))
                 ar = float(np.mean(self.pressure_ratio[mask]))
-                regions.append({'name': f'Region {i+1}', 'start': s, 'end': e,
-                    'center': (s+e)/2, 'score': ad*ar, 'avg_delta': ad,
+                regions.append({
+                    'name': f'Region {i+1}', 'start': s, 'end': e,
+                    'center': (s + e) / 2, 'score': ad * ar, 'avg_delta': ad,
                     'max_delta': float(np.max(self.abs_delta_p[mask])),
-                    'avg_ratio': ar, 'n_sensors': int(np.sum(mask))})
+                    'avg_ratio': ar, 'n_sensors': int(np.sum(mask))
+                })
         return sorted(regions, key=lambda x: x['score'], reverse=True) or \
-               [{'name':'R1','start':mn,'end':mx,'center':(mn+mx)/2,'score':0,
-                 'avg_delta':0,'max_delta':0,'avg_ratio':0,'n_sensors':self.n_sensors}]
+               [{'name': 'R1', 'start': mn, 'end': mx, 'center': (mn+mx)/2,
+                 'score': 0, 'avg_delta': 0, 'max_delta': 0, 'avg_ratio': 0,
+                 'n_sensors': self.n_sensors}]
 
     def interpolate_location(self):
         if self.n_sensors < 4:
@@ -309,7 +427,7 @@ class PipelineLeakAnalyzer:
                                      kind='cubic', fill_value='extrapolate')
             x = np.linspace(self.locations.min(), self.locations.max(), 1000)
             return float(x[np.argmax(f(x))])
-        except:
+        except Exception:
             return float(self.locations[np.argmax(self.abs_delta_p)])
 
     def weighted_average_location(self, si):
@@ -317,12 +435,14 @@ class PipelineLeakAnalyzer:
         return float(np.mean(self.locations)) if tw == 0 else float(np.sum(si * self.locations) / tw)
 
     def transition_point_analysis(self):
-        if self.n_sensors < 2: return float(self.locations[0])
+        if self.n_sensors < 2:
+            return float(self.locations[0])
         mc, tp = 0.0, float(self.locations[0])
         for i in range(self.n_sensors - 1):
             c = abs(self.abs_delta_p[i+1] - self.abs_delta_p[i])
             if c > mc:
-                mc = c; tp = (self.locations[i] + self.locations[i+1]) / 2
+                mc = c
+                tp = (self.locations[i] + self.locations[i+1]) / 2
         return float(tp)
 
     def run_full_analysis(self):
@@ -344,9 +464,9 @@ class PipelineLeakAnalyzer:
         corrected = {k: float(np.clip(v, 0, pipe_max)) for k, v in corrected.items()}
 
         self.results.update({
-            'suspicion_index': si,
-            'top_sensor_idx':  top_idx,
-            'top_sensor_si':   float(si[top_idx]),
+            'suspicion_index':        si,
+            'top_sensor_idx':         top_idx,
+            'top_sensor_si':          float(si[top_idx]),
             'top_sensor_location':    corrected['suspicion_index'],
             'gradient_location':      corrected['gradient'],
             'region_location':        corrected['region'],
@@ -356,16 +476,16 @@ class PipelineLeakAnalyzer:
             'gradients': grads, 'regions': regions, 'top_region': regions[0],
         })
 
-        method_order = ['suspicion_index','gradient','region','interpolation','weighted','transition']
+        method_order = ['suspicion_index', 'gradient', 'region', 'interpolation', 'weighted', 'transition']
         estimates    = np.array([corrected[k] for k in method_order])
         if self.calibration and 'weights' in self.calibration:
             w = np.array([self.calibration['weights'].get(k, 1.0) for k in method_order])
         else:
             w = np.ones(len(method_order))
 
-        self.results['final_estimate'] = float(np.average(estimates, weights=w))
-        self.results['estimate_std']   = float(np.std(estimates))
-        self.results['method_weights'] = dict(zip(method_order, w.tolist()))
+        self.results['final_estimate']  = float(np.average(estimates, weights=w))
+        self.results['estimate_std']    = float(np.std(estimates))
+        self.results['method_weights']  = dict(zip(method_order, w.tolist()))
 
         std = self.results['estimate_std']
         if std < 3:    conf = "HIGH (90-95%)"
@@ -380,11 +500,10 @@ class PipelineLeakAnalyzer:
 # MAP
 # ─────────────────────────────────────────────────────────────────────────────
 
-def make_map(analyzer, results, coords, sensor_kp_all, normal_all, drop_all, active_mask, pipeline_name, calibration):
+def make_map(analyzer, results, coords, sensor_kp_all, norm_all, drop_all, active_mask, pipeline_name, calibration):
     fe  = results['final_estimate']
     std = results['estimate_std']
     si  = results['suspicion_index']
-    mw  = results.get('method_weights', {})
 
     if not coords:
         return None, 0.0, 0.0, "#"
@@ -393,12 +512,10 @@ def make_map(analyzer, results, coords, sensor_kp_all, normal_all, drop_all, act
     m   = folium.Map(location=[mid['lat'], mid['lon']], zoom_start=12,
                      tiles='CartoDB dark_matter')
 
-    # Pipeline route
     folium.PolyLine([(p['lat'], p['lon']) for p in coords],
                     color='#58a6ff', weight=3, opacity=0.8,
                     tooltip=f'Pipeline {pipeline_name}').add_to(m)
 
-    # KM markers every ~5 km
     step = max(1, int(coords[-1]['km'] / 5))
     prev_mark = -99
     for p in coords:
@@ -408,7 +525,6 @@ def make_map(analyzer, results, coords, sensor_kp_all, normal_all, drop_all, act
                 tooltip=f"KP {p['km']:.1f} km | Elev {p['elev']:.0f} m").add_to(m)
             prev_mark = p['km']
 
-    # Active sensors
     for i, kp in enumerate(analyzer.locations):
         lat, lon, elev = get_latlon_at_km(coords, kp)
         ratio  = float(analyzer.pressure_ratio[i])
@@ -422,7 +538,6 @@ def make_map(analyzer, results, coords, sensor_kp_all, normal_all, drop_all, act
                      f"SI: {si_val:.2f}")
         ).add_to(m)
 
-    # Dead sensors
     for i in range(len(sensor_kp_all)):
         if not active_mask[i]:
             lat, lon, _ = get_latlon_at_km(coords, sensor_kp_all[i])
@@ -430,17 +545,17 @@ def make_map(analyzer, results, coords, sensor_kp_all, normal_all, drop_all, act
                 fill=True, fill_color='#21262d', fill_opacity=0.9,
                 tooltip=f"⚠️ SENSOR OFFLINE @ KP {sensor_kp_all[i]:.1f} km").add_to(m)
 
-    # Zone highlights
     primary_pts  = [(p['lat'], p['lon']) for p in coords if (fe-10) <= p['km'] <= (fe+10)]
     critical_pts = [(p['lat'], p['lon']) for p in coords if (fe-5)  <= p['km'] <= (fe+5)]
-    if len(primary_pts)  > 1: folium.PolyLine(primary_pts,  color='#d29922', weight=6, opacity=0.4,
-                                               tooltip=f'Primary Zone KP {fe-10:.1f}–{fe+10:.1f}').add_to(m)
-    if len(critical_pts) > 1: folium.PolyLine(critical_pts, color='#f85149', weight=6, opacity=0.55,
-                                               tooltip=f'Critical Zone KP {fe-5:.1f}–{fe+5:.1f}').add_to(m)
+    if len(primary_pts)  > 1:
+        folium.PolyLine(primary_pts,  color='#d29922', weight=6, opacity=0.4,
+                        tooltip=f'Primary Zone KP {fe-10:.1f}–{fe+10:.1f}').add_to(m)
+    if len(critical_pts) > 1:
+        folium.PolyLine(critical_pts, color='#f85149', weight=6, opacity=0.55,
+                        tooltip=f'Critical Zone KP {fe-5:.1f}–{fe+5:.1f}').add_to(m)
 
-    # Leak marker
     leak_lat, leak_lon, leak_elev = get_latlon_at_km(coords, fe)
-    gmaps = f"https://www.google.com/maps?q={leak_lat:.6f},{leak_lon:.6f}"
+    gmaps      = f"https://www.google.com/maps?q={leak_lat:.6f},{leak_lon:.6f}"
     calib_note = f"✓ {calibration['n_samples']} sampel historis" if calibration else "ℹ tanpa kalibrasi"
 
     folium.Marker([leak_lat, leak_lon],
@@ -463,12 +578,10 @@ def make_map(analyzer, results, coords, sensor_kp_all, normal_all, drop_all, act
               </a></div>""", max_width=300)
     ).add_to(m)
 
-    # Uncertainty circle
     folium.Circle([leak_lat, leak_lon], radius=std * 1000,
         color='#f85149', fill=True, fill_color='#f85149', fill_opacity=0.07,
         weight=1.5, dash_array='6', tooltip=f'Uncertainty ±{std:.1f} km').add_to(m)
 
-    # Legend
     legend = f"""
     <div style="position:fixed;bottom:30px;left:30px;z-index:1000;
                 background:#161b22;border:1px solid #30363d;border-radius:8px;
@@ -519,8 +632,8 @@ def make_plots(analyzer, results):
 
     # 2. Delta P
     colors2 = [RED if s > thr else BLU for s in si]
-    ax[1].bar(analyzer.locations, analyzer.delta_p, width=max(0.5, float(np.diff(analyzer.locations).min())*0.5) if analyzer.n_sensors > 1 else 1.0,
-              color=colors2, alpha=0.85, edgecolor=GRID)
+    bw = max(0.5, float(np.diff(analyzer.locations).min()) * 0.5) if analyzer.n_sensors > 1 else 1.0
+    ax[1].bar(analyzer.locations, analyzer.delta_p, width=bw, color=colors2, alpha=0.85, edgecolor=GRID)
     ax[1].axvline(fe, color=RED, ls='--', lw=2, alpha=0.7)
     ax[1].axhline(0, color='#8b949e', lw=1)
     ax[1].set_title('ΔP = Normal − Anomaly', fontweight='bold')
@@ -539,18 +652,17 @@ def make_plots(analyzer, results):
     ax[2].legend(fontsize=8, framealpha=0.2)
 
     # 4. Pressure Ratio
-    c_ratio = ['#b91c1c' if r>75 else RED if r>50 else YLW if r>25 else GRN
+    c_ratio = ['#b91c1c' if r > 75 else RED if r > 50 else YLW if r > 25 else GRN
                for r in analyzer.pressure_ratio]
-    bw = max(0.5, float(np.diff(analyzer.locations).min())*0.5) if analyzer.n_sensors > 1 else 1.0
     ax[3].bar(analyzer.locations, analyzer.pressure_ratio, width=bw, color=c_ratio, alpha=0.85, edgecolor=GRID)
     ax[3].axvline(fe, color=RED, ls='--', lw=2, alpha=0.7)
     ax[3].set_title('|ΔP| / P_normal × 100%', fontweight='bold')
     ax[3].set_xlabel('KP (km)'); ax[3].set_ylabel('Ratio (%)')
     ax[3].legend(handles=[
         mpatches.Patch(color='#b91c1c', label='>75%'),
-        mpatches.Patch(color=RED, label='50-75%'),
-        mpatches.Patch(color=YLW, label='25-50%'),
-        mpatches.Patch(color=GRN, label='<25%'),
+        mpatches.Patch(color=RED,       label='50-75%'),
+        mpatches.Patch(color=YLW,       label='25-50%'),
+        mpatches.Patch(color=GRN,       label='<25%'),
     ], fontsize=7, framealpha=0.2)
 
     # 5. Gradient change
@@ -565,16 +677,16 @@ def make_plots(analyzer, results):
 
     # 6. Method comparison
     mw = results.get('method_weights', {})
-    mnames = ['SI ★','Gradient','Region','Interpolation','Weighted','Transition']
-    mkeys  = ['suspicion_index','gradient','region','interpolation','weighted','transition']
+    mnames = ['SI ★', 'Gradient', 'Region', 'Interpolation', 'Weighted', 'Transition']
+    mkeys  = ['suspicion_index', 'gradient', 'region', 'interpolation', 'weighted', 'transition']
     mvals  = [results['top_sensor_location'], results['gradient_location'],
-               results['region_location'],    results['interpolation_location'],
-               results['weighted_location'],  results['transition_location']]
+              results['region_location'],     results['interpolation_location'],
+              results['weighted_location'],   results['transition_location']]
     mc = ['#b91c1c', RED, RED, BLU, YLW, YLW]
     bars = ax[5].barh(mnames, mvals, color=mc, alpha=0.85, edgecolor=GRID)
     for b, k in zip(bars, mkeys):
-        ax[5].text(b.get_width() + 0.1, b.get_y()+b.get_height()/2,
-                   f"w={mw.get(k,1):.2f}", va='center', fontsize=7, color='#8b949e')
+        ax[5].text(b.get_width() + 0.1, b.get_y() + b.get_height() / 2,
+                   f"w={mw.get(k, 1):.2f}", va='center', fontsize=7, color='#8b949e')
     ax[5].axvline(fe, color=GRN, ls='--', lw=2.5, label=f'Final KP {fe:.1f}')
     ax[5].set_title('Method Comparison + Weight', fontweight='bold')
     ax[5].set_xlabel('KP (km)')
@@ -656,7 +768,7 @@ st.markdown("""
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# SIDEBAR — PIPELINE SELECTOR
+# SIDEBAR
 # ─────────────────────────────────────────────────────────────────────────────
 
 with st.sidebar:
@@ -686,11 +798,10 @@ with st.sidebar:
 
     st.markdown("---")
 
-    # Calibration status
-    calib = build_calibration(
-        tuple(tuple(d.items()) for d in cfg['historical_data']) if cfg['historical_data'] else (),
-        tuple(cfg['sensor_kp'])
-    )
+    # ── Build calibration — pakai JSON tuple ──
+    hist_json_tuple = make_historical_json_tuple(cfg['historical_data'])
+    calib = build_calibration(hist_json_tuple, tuple(cfg['sensor_kp']))
+
     if calib:
         st.markdown(f"""
         <div class="calib-box">
@@ -722,7 +833,6 @@ with st.sidebar:
 st.markdown(f'<div class="sec-header">📡 Input Tekanan Sensor — {cfg["label"]}</div>',
             unsafe_allow_html=True)
 
-# Sensor count control
 n_sensors = st.number_input(
     "Jumlah sensor aktif di jalur ini",
     min_value=2, max_value=15,
@@ -730,7 +840,6 @@ n_sensors = st.number_input(
     step=1
 )
 
-# Info jalur
 coords = load_coords(cfg['xlsx'])
 if not coords:
     st.markdown(f'<div class="warn-box">⚠️ File {cfg["xlsx"]} tidak ditemukan — '
@@ -741,7 +850,6 @@ else:
                 f'<b>{total_km:.2f} km</b> ({len(coords)} titik koordinat)</div>',
                 unsafe_allow_html=True)
 
-# Table header
 ch = st.columns([1, 2, 2, 2, 1])
 ch[0].markdown("**Sensor**"); ch[1].markdown("**KP (km)**")
 ch[2].markdown("**Normal P (psi)**"); ch[3].markdown("**Drop P (psi)**")
@@ -750,9 +858,9 @@ ch[4].markdown("**Status**")
 sensor_kp, sensor_normal, sensor_drop = [], [], []
 
 for i in range(n_sensors):
-    kp_def  = cfg['sensor_kp'][i]     if i < len(cfg['sensor_kp'])       else float(i * 5)
-    np_def  = cfg['default_normal'][i] if i < len(cfg['default_normal'])  else 100.0
-    dp_def  = cfg['default_drop'][i]   if i < len(cfg['default_drop'])    else 98.0
+    kp_def = cfg['sensor_kp'][i]      if i < len(cfg['sensor_kp'])      else float(i * 5)
+    np_def = cfg['default_normal'][i]  if i < len(cfg['default_normal']) else 100.0
+    dp_def = cfg['default_drop'][i]    if i < len(cfg['default_drop'])   else 98.0
 
     cols = st.columns([1, 2, 2, 2, 1])
     with cols[0]:
@@ -785,11 +893,11 @@ if run_btn:
     norm_arr = np.array(sensor_normal)
     drop_arr = np.array(sensor_drop)
 
-    active_mask  = ~((norm_arr == 0) & (drop_arr == 0))
-    dead_idx     = np.where(~active_mask)[0]
-    active_locs  = kp_arr[active_mask]
-    active_norm  = norm_arr[active_mask]
-    active_drop  = drop_arr[active_mask]
+    active_mask = ~((norm_arr == 0) & (drop_arr == 0))
+    dead_idx    = np.where(~active_mask)[0]
+    active_locs = kp_arr[active_mask]
+    active_norm = norm_arr[active_mask]
+    active_drop = drop_arr[active_mask]
     n_active = int(np.sum(active_mask))
     n_dead   = n_sensors - n_active
 
@@ -799,10 +907,12 @@ if run_btn:
                     unsafe_allow_html=True)
 
     if n_active < 2:
-        st.error(f"❌ Minimal 2 sensor aktif! Saat ini hanya {n_active}."); st.stop()
+        st.error(f"❌ Minimal 2 sensor aktif! Saat ini hanya {n_active}.")
+        st.stop()
 
     if len(active_locs) > 1 and not np.all(np.diff(active_locs) > 0):
-        st.error("❌ KP sensor harus ascending (urut naik)!"); st.stop()
+        st.error("❌ KP sensor harus ascending (urut naik)!")
+        st.stop()
 
     max_gap = float(np.max(np.diff(active_locs))) if len(active_locs) > 1 else 0.0
     if max_gap > 12:
@@ -816,7 +926,6 @@ if run_btn:
             f' | SI weight = {calib["weights"]["suspicion_index"]:.2f}</div>',
             unsafe_allow_html=True)
 
-    # Run analyzer
     analyzer = PipelineLeakAnalyzer(active_locs, active_norm, active_drop, calibration=calib)
     results  = analyzer.run_full_analysis()
     fe   = results['final_estimate']
@@ -824,7 +933,7 @@ if run_btn:
     conf = results['confidence']
     si   = results['suspicion_index']
 
-    # ── Metric cards ──
+    # Metric cards
     st.markdown('<div class="sec-header">📊 Hasil Analisis</div>', unsafe_allow_html=True)
     c1, c2, c3, c4 = st.columns(4)
     with c1:
@@ -848,7 +957,7 @@ if run_btn:
           <div class="value" style="font-size:1rem;">{conf}</div>
           <div class="sub">std = {std:.2f} km</div></div>""", unsafe_allow_html=True)
 
-    # ── Final estimate ──
+    # Final estimate
     calib_flag = " <span style='font-size:0.8rem;color:#3fb950;'>✓ calibrated</span>" if calib else ""
     st.markdown(f"""
     <div class="result-box">
@@ -857,27 +966,29 @@ if run_btn:
       <div class="kp-std">± {std:.1f} km &nbsp;|&nbsp; Focus: KP {fe-3:.1f} – {fe+3:.1f}</div>
     </div>""", unsafe_allow_html=True)
 
-    # ── Method table ──
+    # Method table
     st.markdown('<div class="sec-header">🔢 Perbandingan Metode</div>', unsafe_allow_html=True)
     mw = results.get('method_weights', {})
     mdf = pd.DataFrame({
-        'Method': ['Suspicion Index ★','Gradient','Region','Interpolation','Weighted Avg','Transition'],
-        'Est. KP (km)': [round(results['top_sensor_location'], 2),
-                         round(results['gradient_location'], 2),
-                         round(results['region_location'], 2),
-                         round(results['interpolation_location'], 2),
-                         round(results['weighted_location'], 2),
-                         round(results['transition_location'], 2)],
-        'Weight': [f"{mw.get(k,1):.3f}" for k in
-                   ['suspicion_index','gradient','region','interpolation','weighted','transition']],
+        'Method': ['Suspicion Index ★', 'Gradient', 'Region', 'Interpolation', 'Weighted Avg', 'Transition'],
+        'Est. KP (km)': [
+            round(results['top_sensor_location'], 2),
+            round(results['gradient_location'], 2),
+            round(results['region_location'], 2),
+            round(results['interpolation_location'], 2),
+            round(results['weighted_location'], 2),
+            round(results['transition_location'], 2),
+        ],
+        'Weight': [f"{mw.get(k, 1):.3f}" for k in
+                   ['suspicion_index', 'gradient', 'region', 'interpolation', 'weighted', 'transition']],
         'Bias(km)': [f"{calib['bias'][k]:+.2f}" if calib else '-' for k in
-                     ['suspicion_index','gradient','region','interpolation','weighted','transition']],
+                     ['suspicion_index', 'gradient', 'region', 'interpolation', 'weighted', 'transition']],
         'MAE(km)':  [f"{calib['mae'][k]:.2f}"  if calib else '-' for k in
-                     ['suspicion_index','gradient','region','interpolation','weighted','transition']],
+                     ['suspicion_index', 'gradient', 'region', 'interpolation', 'weighted', 'transition']],
     })
     st.dataframe(mdf, use_container_width=True, hide_index=True)
 
-    # ── Sensor detail ──
+    # Sensor detail
     st.markdown('<div class="sec-header">📋 Detail Sensor Aktif</div>', unsafe_allow_html=True)
     ddf = pd.DataFrame({
         'KP (km)':        [f"{l:.1f}" for l in analyzer.locations],
@@ -890,7 +1001,7 @@ if run_btn:
     })
     st.dataframe(ddf.sort_values('SI', ascending=False), use_container_width=True, hide_index=True)
 
-    # ── MAP ──
+    # Map
     st.markdown('<div class="sec-header">🗺️ Peta Pipeline & Estimasi Lokasi Kebocoran</div>',
                 unsafe_allow_html=True)
 
@@ -900,7 +1011,6 @@ if run_btn:
         selected_name, calib
     )
 
-    # Coordinate + Google Maps link
     st.markdown(f"""
     <div style="background:#161b22;border:1px solid #30363d;border-left:4px solid #f85149;
                 border-radius:6px;padding:1rem 1.2rem;margin-bottom:0.8rem;
@@ -925,7 +1035,7 @@ if run_btn:
     else:
         st.warning("Peta tidak tersedia — file koordinat xlsx tidak ditemukan.")
 
-    # ── Inspection zones ──
+    # Inspection zones
     st.markdown('<div class="sec-header">🚨 Zona Inspeksi</div>', unsafe_allow_html=True)
     z1, z2, z3 = st.columns(3)
     with z1:
@@ -944,21 +1054,21 @@ if run_btn:
           <div class="value" style="font-size:1.1rem;">KP {max(0,fe-3):.1f} – {fe+3:.1f}</div>
           <div class="sub">6 km focus area</div></div>""", unsafe_allow_html=True)
 
-    # ── Charts ──
+    # Charts
     st.markdown('<div class="sec-header">📈 Visualisasi Analisis</div>', unsafe_allow_html=True)
     fig = make_plots(analyzer, results)
     st.pyplot(fig, use_container_width=True)
     plt.close(fig)
 
-    # ── Export ──
+    # Export
     st.markdown('<div class="sec-header">💾 Export</div>', unsafe_allow_html=True)
     exp_df = pd.DataFrame({
-        'KP (km)': analyzer.locations,
-        'Normal P (psi)': analyzer.normal_p,
-        'Drop P (psi)': analyzer.drop_p,
-        'Delta P (psi)': analyzer.delta_p,
+        'KP (km)':         analyzer.locations,
+        'Normal P (psi)':  analyzer.normal_p,
+        'Drop P (psi)':    analyzer.drop_p,
+        'Delta P (psi)':   analyzer.delta_p,
         '|Delta P| (psi)': analyzer.abs_delta_p,
-        'Ratio (%)': analyzer.pressure_ratio,
+        'Ratio (%)':       analyzer.pressure_ratio,
         'Suspicion Index': si,
     })
     summary = pd.DataFrame([{
