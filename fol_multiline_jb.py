@@ -1,4 +1,4 @@
-import os, math
+import os, math, json
 import streamlit as st
 import numpy as np
 import pandas as pd
@@ -22,8 +22,6 @@ st.set_page_config(
 
 # ─────────────────────────────────────────────────────────────────────────────
 # PIPELINE REGISTRY
-# Setiap jalur punya: params, sensor_locations (default KP), xlsx elevasi,
-# dan historical_data (kosong untuk sekarang, isi nanti kalau ada ground truth)
 # ─────────────────────────────────────────────────────────────────────────────
 
 PIPELINES = {
@@ -38,12 +36,13 @@ PIPELINES = {
         "roughness_in": 0.002,
         "flow_rate":    320,
         "fluid_type":   "Crude Oil",
-        "sensor_kp":      [0.0, 7.8, 15.4],
+        "sensor_kp":      [0.0, 7.8, 15.4, 23.2], #kas1, kas2, kas3
         "default_normal": [150.727, 125.920, 84.037],
         "default_drop":   [143.778, 104.540, 64.385],
-        # Isi kalau ada kasus terkonfirmasi:
-        # {"sensor_normal": [...], "sensor_drop": [...], "actual_leak_km": X}
-        "historical_data": [],
+        "historical_data": [
+{"sensor_normal": [171.54, 117.301, 87.666, 18.377], "sensor_drop": [168.431, 113.552, 85.647,18.25 ], "actual_leak_km": 3.18},#tgl 3 Agustus 2026
+{"sensor_normal": [162.914, 113.014, 76.77, 15.206], "sensor_drop": [154.265, 96.025, 69.383, 14.989], "actual_leak_km": 5.5},  #tgl 20 agustus 2026
+        ],
     },
 
     # ── KTT → KAS ──────────────────────────────────────────────────────────
@@ -91,7 +90,11 @@ PIPELINES = {
         "sensor_kp":      [0.0, 7.14, 15.4, 19.7],
         "default_normal": [136.0, 112.14, 95.4, 37.1],
         "default_drop":   [133.0, 110.10, 82.5, 34.5],
-        "historical_data": [],
+        "historical_data": [
+            {"sensor_normal": [1.679, 0.1, 40.692, 11.98], "sensor_drop": [1.251, 0.1, 16.208, 0.1], "actual_leak_km": 18.8},
+            {"sensor_normal": [1.8, 0.1, 39.844, 12.358], "sensor_drop": [1.8, 0.1, 15.407, 0.1],  "actual_leak_km": 14.6},
+            {"sensor_normal": [1.9, 0.25, 38.6, 11.24], "sensor_drop": [1.9, 0.21, 26.6, 0.08],  "actual_leak_km": 13.46},
+        ],
     },
 
     # ── BTJ → BJG ──────────────────────────────────────────────────────────
@@ -126,10 +129,6 @@ def haversine(lat1, lon1, lat2, lon2):
 
 @st.cache_data
 def load_coords(xlsx_filename: str) -> list:
-    """
-    Cari xlsx di: folder app → uploads sandbox.
-    Return list of {km, lat, lon, elev}.
-    """
     candidates = [
         os.path.join(os.path.dirname(os.path.abspath(__file__)), xlsx_filename),
         os.path.join(os.getcwd(), xlsx_filename),
@@ -178,20 +177,23 @@ def get_latlon_at_km(coords: list, target_km: float):
 
 # ─────────────────────────────────────────────────────────────────────────────
 # CALIBRATION
+# FIX: historical_data di-pass sebagai tuple of JSON strings (hashable),
+#      lalu di-parse balik ke dict di dalam fungsi.
 # ─────────────────────────────────────────────────────────────────────────────
 
 @st.cache_data
-def build_calibration(historical_data: tuple, sensor_locs_tuple: tuple):
+def build_calibration(historical_json_tuple: tuple, sensor_locs_tuple: tuple):
     """
-    historical_data: tuple of dicts (di-hash oleh st.cache_data via tuple)
-    Return calibration dict or None.
+    historical_json_tuple : tuple of JSON strings — tiap string = 1 record dict.
+    sensor_locs_tuple     : tuple of float KP locations.
     """
-    historical_data = list(historical_data)
-    if not historical_data:
+    # ── Konversi balik ke list of dict ──
+    if not historical_json_tuple:
         return None
+    historical_data = [json.loads(s) for s in historical_json_tuple]
 
     sensor_locs = np.array(sensor_locs_tuple)
-    method_keys = ['suspicion_index','gradient','region','interpolation','weighted','transition']
+    method_keys = ['suspicion_index', 'gradient', 'region', 'interpolation', 'weighted', 'transition']
     errors = {k: [] for k in method_keys}
 
     for rec in historical_data:
@@ -200,9 +202,12 @@ def build_calibration(historical_data: tuple, sensor_locs_tuple: tuple):
         actual   = float(rec['actual_leak_km'])
         n = min(len(norm_arr), len(drop_arr), len(sensor_locs))
         locs_ = sensor_locs[:n]
-        norm_ = norm_arr[:n]; drop_ = drop_arr[:n]
+        norm_ = norm_arr[:n]
+        drop_ = drop_arr[:n]
         mask  = ~((norm_ == 0) & (drop_ == 0))
-        locs_ = locs_[mask]; norm_ = norm_[mask]; drop_ = drop_[mask]
+        locs_ = locs_[mask]
+        norm_ = norm_[mask]
+        drop_ = drop_[mask]
         if len(locs_) < 2:
             continue
 
@@ -234,8 +239,13 @@ def build_calibration(historical_data: tuple, sensor_locs_tuple: tuple):
     return {'n_samples': len(historical_data), 'bias': bias, 'mae': mae, 'weights': weights}
 
 
+def make_historical_json_tuple(historical_data: list) -> tuple:
+    """Serialisasi list of dict ke tuple of JSON strings untuk st.cache_data."""
+    return tuple(json.dumps(d, sort_keys=True) for d in historical_data)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
-# ANALYZER CLASS v4
+# ANALYZER CLASS
 # ─────────────────────────────────────────────────────────────────────────────
 
 class PipelineLeakAnalyzer:
@@ -260,7 +270,8 @@ class PipelineLeakAnalyzer:
     def calculate_suspicion_index(self):
         si = np.zeros(self.n_sensors)
         for i in range(self.n_sensors):
-            df = self.abs_delta_p[i]; rf = self.pressure_ratio[i]
+            df = self.abs_delta_p[i]
+            rf = self.pressure_ratio[i]
             if 0 < i < self.n_sensors - 1:
                 nf = max(0.0, df - (self.abs_delta_p[i-1] + self.abs_delta_p[i+1]) / 2)
             elif i == 0:
@@ -274,7 +285,8 @@ class PipelineLeakAnalyzer:
         ng, dg, chg, locs = [], [], [], []
         for i in range(self.n_sensors - 1):
             dist = self.locations[i+1] - self.locations[i]
-            if dist == 0: continue
+            if dist == 0:
+                continue
             n = (self.normal_p[i+1] - self.normal_p[i]) / dist
             d = (self.drop_p[i+1]   - self.drop_p[i])   / dist
             ng.append(n); dg.append(d); chg.append(abs(n - d))
@@ -283,8 +295,10 @@ class PipelineLeakAnalyzer:
 
     def region_analysis(self, n_regions=5):
         mn, mx = self.locations.min(), self.locations.max()
-        if mn == mx: return [{'name':'Region 1','start':mn,'end':mx,'center':mn,
-                               'score':0,'avg_delta':0,'max_delta':0,'avg_ratio':0,'n_sensors':self.n_sensors}]
+        if mn == mx:
+            return [{'name': 'Region 1', 'start': mn, 'end': mx, 'center': mn,
+                     'score': 0, 'avg_delta': 0, 'max_delta': 0, 'avg_ratio': 0,
+                     'n_sensors': self.n_sensors}]
         rs = (mx - mn) / n_regions
         regions = []
         for i in range(n_regions):
@@ -293,13 +307,16 @@ class PipelineLeakAnalyzer:
             if np.any(mask):
                 ad = float(np.mean(self.abs_delta_p[mask]))
                 ar = float(np.mean(self.pressure_ratio[mask]))
-                regions.append({'name': f'Region {i+1}', 'start': s, 'end': e,
-                    'center': (s+e)/2, 'score': ad*ar, 'avg_delta': ad,
+                regions.append({
+                    'name': f'Region {i+1}', 'start': s, 'end': e,
+                    'center': (s + e) / 2, 'score': ad * ar, 'avg_delta': ad,
                     'max_delta': float(np.max(self.abs_delta_p[mask])),
-                    'avg_ratio': ar, 'n_sensors': int(np.sum(mask))})
+                    'avg_ratio': ar, 'n_sensors': int(np.sum(mask))
+                })
         return sorted(regions, key=lambda x: x['score'], reverse=True) or \
-               [{'name':'R1','start':mn,'end':mx,'center':(mn+mx)/2,'score':0,
-                 'avg_delta':0,'max_delta':0,'avg_ratio':0,'n_sensors':self.n_sensors}]
+               [{'name': 'R1', 'start': mn, 'end': mx, 'center': (mn+mx)/2,
+                 'score': 0, 'avg_delta': 0, 'max_delta': 0, 'avg_ratio': 0,
+                 'n_sensors': self.n_sensors}]
 
     def interpolate_location(self):
         if self.n_sensors < 4:
@@ -309,7 +326,7 @@ class PipelineLeakAnalyzer:
                                      kind='cubic', fill_value='extrapolate')
             x = np.linspace(self.locations.min(), self.locations.max(), 1000)
             return float(x[np.argmax(f(x))])
-        except:
+        except Exception:
             return float(self.locations[np.argmax(self.abs_delta_p)])
 
     def weighted_average_location(self, si):
@@ -317,12 +334,14 @@ class PipelineLeakAnalyzer:
         return float(np.mean(self.locations)) if tw == 0 else float(np.sum(si * self.locations) / tw)
 
     def transition_point_analysis(self):
-        if self.n_sensors < 2: return float(self.locations[0])
+        if self.n_sensors < 2:
+            return float(self.locations[0])
         mc, tp = 0.0, float(self.locations[0])
         for i in range(self.n_sensors - 1):
             c = abs(self.abs_delta_p[i+1] - self.abs_delta_p[i])
             if c > mc:
-                mc = c; tp = (self.locations[i] + self.locations[i+1]) / 2
+                mc = c
+                tp = (self.locations[i] + self.locations[i+1]) / 2
         return float(tp)
 
     def run_full_analysis(self):
@@ -344,9 +363,9 @@ class PipelineLeakAnalyzer:
         corrected = {k: float(np.clip(v, 0, pipe_max)) for k, v in corrected.items()}
 
         self.results.update({
-            'suspicion_index': si,
-            'top_sensor_idx':  top_idx,
-            'top_sensor_si':   float(si[top_idx]),
+            'suspicion_index':        si,
+            'top_sensor_idx':         top_idx,
+            'top_sensor_si':          float(si[top_idx]),
             'top_sensor_location':    corrected['suspicion_index'],
             'gradient_location':      corrected['gradient'],
             'region_location':        corrected['region'],
@@ -356,16 +375,16 @@ class PipelineLeakAnalyzer:
             'gradients': grads, 'regions': regions, 'top_region': regions[0],
         })
 
-        method_order = ['suspicion_index','gradient','region','interpolation','weighted','transition']
+        method_order = ['suspicion_index', 'gradient', 'region', 'interpolation', 'weighted', 'transition']
         estimates    = np.array([corrected[k] for k in method_order])
         if self.calibration and 'weights' in self.calibration:
             w = np.array([self.calibration['weights'].get(k, 1.0) for k in method_order])
         else:
             w = np.ones(len(method_order))
 
-        self.results['final_estimate'] = float(np.average(estimates, weights=w))
-        self.results['estimate_std']   = float(np.std(estimates))
-        self.results['method_weights'] = dict(zip(method_order, w.tolist()))
+        self.results['final_estimate']  = float(np.average(estimates, weights=w))
+        self.results['estimate_std']    = float(np.std(estimates))
+        self.results['method_weights']  = dict(zip(method_order, w.tolist()))
 
         std = self.results['estimate_std']
         if std < 3:    conf = "HIGH (90-95%)"
@@ -380,11 +399,10 @@ class PipelineLeakAnalyzer:
 # MAP
 # ─────────────────────────────────────────────────────────────────────────────
 
-def make_map(analyzer, results, coords, sensor_kp_all, normal_all, drop_all, active_mask, pipeline_name, calibration):
+def make_map(analyzer, results, coords, sensor_kp_all, norm_all, drop_all, active_mask, pipeline_name, calibration):
     fe  = results['final_estimate']
     std = results['estimate_std']
     si  = results['suspicion_index']
-    mw  = results.get('method_weights', {})
 
     if not coords:
         return None, 0.0, 0.0, "#"
@@ -393,12 +411,10 @@ def make_map(analyzer, results, coords, sensor_kp_all, normal_all, drop_all, act
     m   = folium.Map(location=[mid['lat'], mid['lon']], zoom_start=12,
                      tiles='CartoDB dark_matter')
 
-    # Pipeline route
     folium.PolyLine([(p['lat'], p['lon']) for p in coords],
                     color='#58a6ff', weight=3, opacity=0.8,
                     tooltip=f'Pipeline {pipeline_name}').add_to(m)
 
-    # KM markers every ~5 km
     step = max(1, int(coords[-1]['km'] / 5))
     prev_mark = -99
     for p in coords:
@@ -408,7 +424,6 @@ def make_map(analyzer, results, coords, sensor_kp_all, normal_all, drop_all, act
                 tooltip=f"KP {p['km']:.1f} km | Elev {p['elev']:.0f} m").add_to(m)
             prev_mark = p['km']
 
-    # Active sensors
     for i, kp in enumerate(analyzer.locations):
         lat, lon, elev = get_latlon_at_km(coords, kp)
         ratio  = float(analyzer.pressure_ratio[i])
@@ -422,7 +437,6 @@ def make_map(analyzer, results, coords, sensor_kp_all, normal_all, drop_all, act
                      f"SI: {si_val:.2f}")
         ).add_to(m)
 
-    # Dead sensors
     for i in range(len(sensor_kp_all)):
         if not active_mask[i]:
             lat, lon, _ = get_latlon_at_km(coords, sensor_kp_all[i])
@@ -430,17 +444,17 @@ def make_map(analyzer, results, coords, sensor_kp_all, normal_all, drop_all, act
                 fill=True, fill_color='#21262d', fill_opacity=0.9,
                 tooltip=f"⚠️ SENSOR OFFLINE @ KP {sensor_kp_all[i]:.1f} km").add_to(m)
 
-    # Zone highlights
     primary_pts  = [(p['lat'], p['lon']) for p in coords if (fe-10) <= p['km'] <= (fe+10)]
     critical_pts = [(p['lat'], p['lon']) for p in coords if (fe-5)  <= p['km'] <= (fe+5)]
-    if len(primary_pts)  > 1: folium.PolyLine(primary_pts,  color='#d29922', weight=6, opacity=0.4,
-                                               tooltip=f'Primary Zone KP {fe-10:.1f}–{fe+10:.1f}').add_to(m)
-    if len(critical_pts) > 1: folium.PolyLine(critical_pts, color='#f85149', weight=6, opacity=0.55,
-                                               tooltip=f'Critical Zone KP {fe-5:.1f}–{fe+5:.1f}').add_to(m)
+    if len(primary_pts)  > 1:
+        folium.PolyLine(primary_pts,  color='#d29922', weight=6, opacity=0.4,
+                        tooltip=f'Primary Zone KP {fe-10:.1f}–{fe+10:.1f}').add_to(m)
+    if len(critical_pts) > 1:
+        folium.PolyLine(critical_pts, color='#f85149', weight=6, opacity=0.55,
+                        tooltip=f'Critical Zone KP {fe-5:.1f}–{fe+5:.1f}').add_to(m)
 
-    # Leak marker
     leak_lat, leak_lon, leak_elev = get_latlon_at_km(coords, fe)
-    gmaps = f"https://www.google.com/maps?q={leak_lat:.6f},{leak_lon:.6f}"
+    gmaps      = f"https://www.google.com/maps?q={leak_lat:.6f},{leak_lon:.6f}"
     calib_note = f"✓ {calibration['n_samples']} sampel historis" if calibration else "ℹ tanpa kalibrasi"
 
     folium.Marker([leak_lat, leak_lon],
@@ -463,12 +477,10 @@ def make_map(analyzer, results, coords, sensor_kp_all, normal_all, drop_all, act
               </a></div>""", max_width=300)
     ).add_to(m)
 
-    # Uncertainty circle
     folium.Circle([leak_lat, leak_lon], radius=std * 1000,
         color='#f85149', fill=True, fill_color='#f85149', fill_opacity=0.07,
         weight=1.5, dash_array='6', tooltip=f'Uncertainty ±{std:.1f} km').add_to(m)
 
-    # Legend
     legend = f"""
     <div style="position:fixed;bottom:30px;left:30px;z-index:1000;
                 background:#161b22;border:1px solid #30363d;border-radius:8px;
@@ -519,8 +531,8 @@ def make_plots(analyzer, results):
 
     # 2. Delta P
     colors2 = [RED if s > thr else BLU for s in si]
-    ax[1].bar(analyzer.locations, analyzer.delta_p, width=max(0.5, float(np.diff(analyzer.locations).min())*0.5) if analyzer.n_sensors > 1 else 1.0,
-              color=colors2, alpha=0.85, edgecolor=GRID)
+    bw = max(0.5, float(np.diff(analyzer.locations).min()) * 0.5) if analyzer.n_sensors > 1 else 1.0
+    ax[1].bar(analyzer.locations, analyzer.delta_p, width=bw, color=colors2, alpha=0.85, edgecolor=GRID)
     ax[1].axvline(fe, color=RED, ls='--', lw=2, alpha=0.7)
     ax[1].axhline(0, color='#8b949e', lw=1)
     ax[1].set_title('ΔP = Normal − Anomaly', fontweight='bold')
@@ -539,18 +551,17 @@ def make_plots(analyzer, results):
     ax[2].legend(fontsize=8, framealpha=0.2)
 
     # 4. Pressure Ratio
-    c_ratio = ['#b91c1c' if r>75 else RED if r>50 else YLW if r>25 else GRN
+    c_ratio = ['#b91c1c' if r > 75 else RED if r > 50 else YLW if r > 25 else GRN
                for r in analyzer.pressure_ratio]
-    bw = max(0.5, float(np.diff(analyzer.locations).min())*0.5) if analyzer.n_sensors > 1 else 1.0
     ax[3].bar(analyzer.locations, analyzer.pressure_ratio, width=bw, color=c_ratio, alpha=0.85, edgecolor=GRID)
     ax[3].axvline(fe, color=RED, ls='--', lw=2, alpha=0.7)
     ax[3].set_title('|ΔP| / P_normal × 100%', fontweight='bold')
     ax[3].set_xlabel('KP (km)'); ax[3].set_ylabel('Ratio (%)')
     ax[3].legend(handles=[
         mpatches.Patch(color='#b91c1c', label='>75%'),
-        mpatches.Patch(color=RED, label='50-75%'),
-        mpatches.Patch(color=YLW, label='25-50%'),
-        mpatches.Patch(color=GRN, label='<25%'),
+        mpatches.Patch(color=RED,       label='50-75%'),
+        mpatches.Patch(color=YLW,       label='25-50%'),
+        mpatches.Patch(color=GRN,       label='<25%'),
     ], fontsize=7, framealpha=0.2)
 
     # 5. Gradient change
@@ -565,16 +576,16 @@ def make_plots(analyzer, results):
 
     # 6. Method comparison
     mw = results.get('method_weights', {})
-    mnames = ['SI ★','Gradient','Region','Interpolation','Weighted','Transition']
-    mkeys  = ['suspicion_index','gradient','region','interpolation','weighted','transition']
+    mnames = ['SI ★', 'Gradient', 'Region', 'Interpolation', 'Weighted', 'Transition']
+    mkeys  = ['suspicion_index', 'gradient', 'region', 'interpolation', 'weighted', 'transition']
     mvals  = [results['top_sensor_location'], results['gradient_location'],
-               results['region_location'],    results['interpolation_location'],
-               results['weighted_location'],  results['transition_location']]
+              results['region_location'],     results['interpolation_location'],
+              results['weighted_location'],   results['transition_location']]
     mc = ['#b91c1c', RED, RED, BLU, YLW, YLW]
     bars = ax[5].barh(mnames, mvals, color=mc, alpha=0.85, edgecolor=GRID)
     for b, k in zip(bars, mkeys):
-        ax[5].text(b.get_width() + 0.1, b.get_y()+b.get_height()/2,
-                   f"w={mw.get(k,1):.2f}", va='center', fontsize=7, color='#8b949e')
+        ax[5].text(b.get_width() + 0.1, b.get_y() + b.get_height() / 2,
+                   f"w={mw.get(k, 1):.2f}", va='center', fontsize=7, color='#8b949e')
     ax[5].axvline(fe, color=GRN, ls='--', lw=2.5, label=f'Final KP {fe:.1f}')
     ax[5].set_title('Method Comparison + Weight', fontweight='bold')
     ax[5].set_xlabel('KP (km)')
@@ -656,7 +667,7 @@ st.markdown("""
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# SIDEBAR — PIPELINE SELECTOR
+# SIDEBAR
 # ─────────────────────────────────────────────────────────────────────────────
 
 with st.sidebar:
@@ -686,11 +697,10 @@ with st.sidebar:
 
     st.markdown("---")
 
-    # Calibration status
-    calib = build_calibration(
-        tuple(tuple(d.items()) for d in cfg['historical_data']) if cfg['historical_data'] else (),
-        tuple(cfg['sensor_kp'])
-    )
+    # ── Build calibration — pakai JSON tuple ──
+    hist_json_tuple = make_historical_json_tuple(cfg['historical_data'])
+    calib = build_calibration(hist_json_tuple, tuple(cfg['sensor_kp']))
+
     if calib:
         st.markdown(f"""
         <div class="calib-box">
@@ -722,7 +732,6 @@ with st.sidebar:
 st.markdown(f'<div class="sec-header">📡 Input Tekanan Sensor — {cfg["label"]}</div>',
             unsafe_allow_html=True)
 
-# Sensor count control
 n_sensors = st.number_input(
     "Jumlah sensor aktif di jalur ini",
     min_value=2, max_value=15,
@@ -730,7 +739,6 @@ n_sensors = st.number_input(
     step=1
 )
 
-# Info jalur
 coords = load_coords(cfg['xlsx'])
 if not coords:
     st.markdown(f'<div class="warn-box">⚠️ File {cfg["xlsx"]} tidak ditemukan — '
@@ -741,7 +749,6 @@ else:
                 f'<b>{total_km:.2f} km</b> ({len(coords)} titik koordinat)</div>',
                 unsafe_allow_html=True)
 
-# Table header
 ch = st.columns([1, 2, 2, 2, 1])
 ch[0].markdown("**Sensor**"); ch[1].markdown("**KP (km)**")
 ch[2].markdown("**Normal P (psi)**"); ch[3].markdown("**Drop P (psi)**")
@@ -750,9 +757,9 @@ ch[4].markdown("**Status**")
 sensor_kp, sensor_normal, sensor_drop = [], [], []
 
 for i in range(n_sensors):
-    kp_def  = cfg['sensor_kp'][i]     if i < len(cfg['sensor_kp'])       else float(i * 5)
-    np_def  = cfg['default_normal'][i] if i < len(cfg['default_normal'])  else 100.0
-    dp_def  = cfg['default_drop'][i]   if i < len(cfg['default_drop'])    else 98.0
+    kp_def = cfg['sensor_kp'][i]      if i < len(cfg['sensor_kp'])      else float(i * 5)
+    np_def = cfg['default_normal'][i]  if i < len(cfg['default_normal']) else 100.0
+    dp_def = cfg['default_drop'][i]    if i < len(cfg['default_drop'])   else 98.0
 
     cols = st.columns([1, 2, 2, 2, 1])
     with cols[0]:
@@ -785,11 +792,11 @@ if run_btn:
     norm_arr = np.array(sensor_normal)
     drop_arr = np.array(sensor_drop)
 
-    active_mask  = ~((norm_arr == 0) & (drop_arr == 0))
-    dead_idx     = np.where(~active_mask)[0]
-    active_locs  = kp_arr[active_mask]
-    active_norm  = norm_arr[active_mask]
-    active_drop  = drop_arr[active_mask]
+    active_mask = ~((norm_arr == 0) & (drop_arr == 0))
+    dead_idx    = np.where(~active_mask)[0]
+    active_locs = kp_arr[active_mask]
+    active_norm = norm_arr[active_mask]
+    active_drop = drop_arr[active_mask]
     n_active = int(np.sum(active_mask))
     n_dead   = n_sensors - n_active
 
@@ -799,10 +806,12 @@ if run_btn:
                     unsafe_allow_html=True)
 
     if n_active < 2:
-        st.error(f"❌ Minimal 2 sensor aktif! Saat ini hanya {n_active}."); st.stop()
+        st.error(f"❌ Minimal 2 sensor aktif! Saat ini hanya {n_active}.")
+        st.stop()
 
     if len(active_locs) > 1 and not np.all(np.diff(active_locs) > 0):
-        st.error("❌ KP sensor harus ascending (urut naik)!"); st.stop()
+        st.error("❌ KP sensor harus ascending (urut naik)!")
+        st.stop()
 
     max_gap = float(np.max(np.diff(active_locs))) if len(active_locs) > 1 else 0.0
     if max_gap > 12:
@@ -816,7 +825,6 @@ if run_btn:
             f' | SI weight = {calib["weights"]["suspicion_index"]:.2f}</div>',
             unsafe_allow_html=True)
 
-    # Run analyzer
     analyzer = PipelineLeakAnalyzer(active_locs, active_norm, active_drop, calibration=calib)
     results  = analyzer.run_full_analysis()
     fe   = results['final_estimate']
@@ -824,7 +832,7 @@ if run_btn:
     conf = results['confidence']
     si   = results['suspicion_index']
 
-    # ── Metric cards ──
+    # Metric cards
     st.markdown('<div class="sec-header">📊 Hasil Analisis</div>', unsafe_allow_html=True)
     c1, c2, c3, c4 = st.columns(4)
     with c1:
@@ -848,7 +856,7 @@ if run_btn:
           <div class="value" style="font-size:1rem;">{conf}</div>
           <div class="sub">std = {std:.2f} km</div></div>""", unsafe_allow_html=True)
 
-    # ── Final estimate ──
+    # Final estimate
     calib_flag = " <span style='font-size:0.8rem;color:#3fb950;'>✓ calibrated</span>" if calib else ""
     st.markdown(f"""
     <div class="result-box">
@@ -857,27 +865,29 @@ if run_btn:
       <div class="kp-std">± {std:.1f} km &nbsp;|&nbsp; Focus: KP {fe-3:.1f} – {fe+3:.1f}</div>
     </div>""", unsafe_allow_html=True)
 
-    # ── Method table ──
+    # Method table
     st.markdown('<div class="sec-header">🔢 Perbandingan Metode</div>', unsafe_allow_html=True)
     mw = results.get('method_weights', {})
     mdf = pd.DataFrame({
-        'Method': ['Suspicion Index ★','Gradient','Region','Interpolation','Weighted Avg','Transition'],
-        'Est. KP (km)': [round(results['top_sensor_location'], 2),
-                         round(results['gradient_location'], 2),
-                         round(results['region_location'], 2),
-                         round(results['interpolation_location'], 2),
-                         round(results['weighted_location'], 2),
-                         round(results['transition_location'], 2)],
-        'Weight': [f"{mw.get(k,1):.3f}" for k in
-                   ['suspicion_index','gradient','region','interpolation','weighted','transition']],
+        'Method': ['Suspicion Index ★', 'Gradient', 'Region', 'Interpolation', 'Weighted Avg', 'Transition'],
+        'Est. KP (km)': [
+            round(results['top_sensor_location'], 2),
+            round(results['gradient_location'], 2),
+            round(results['region_location'], 2),
+            round(results['interpolation_location'], 2),
+            round(results['weighted_location'], 2),
+            round(results['transition_location'], 2),
+        ],
+        'Weight': [f"{mw.get(k, 1):.3f}" for k in
+                   ['suspicion_index', 'gradient', 'region', 'interpolation', 'weighted', 'transition']],
         'Bias(km)': [f"{calib['bias'][k]:+.2f}" if calib else '-' for k in
-                     ['suspicion_index','gradient','region','interpolation','weighted','transition']],
+                     ['suspicion_index', 'gradient', 'region', 'interpolation', 'weighted', 'transition']],
         'MAE(km)':  [f"{calib['mae'][k]:.2f}"  if calib else '-' for k in
-                     ['suspicion_index','gradient','region','interpolation','weighted','transition']],
+                     ['suspicion_index', 'gradient', 'region', 'interpolation', 'weighted', 'transition']],
     })
     st.dataframe(mdf, use_container_width=True, hide_index=True)
 
-    # ── Sensor detail ──
+    # Sensor detail
     st.markdown('<div class="sec-header">📋 Detail Sensor Aktif</div>', unsafe_allow_html=True)
     ddf = pd.DataFrame({
         'KP (km)':        [f"{l:.1f}" for l in analyzer.locations],
@@ -890,7 +900,7 @@ if run_btn:
     })
     st.dataframe(ddf.sort_values('SI', ascending=False), use_container_width=True, hide_index=True)
 
-    # ── MAP ──
+    # Map
     st.markdown('<div class="sec-header">🗺️ Peta Pipeline & Estimasi Lokasi Kebocoran</div>',
                 unsafe_allow_html=True)
 
@@ -900,7 +910,6 @@ if run_btn:
         selected_name, calib
     )
 
-    # Coordinate + Google Maps link
     st.markdown(f"""
     <div style="background:#161b22;border:1px solid #30363d;border-left:4px solid #f85149;
                 border-radius:6px;padding:1rem 1.2rem;margin-bottom:0.8rem;
@@ -925,7 +934,7 @@ if run_btn:
     else:
         st.warning("Peta tidak tersedia — file koordinat xlsx tidak ditemukan.")
 
-    # ── Inspection zones ──
+    # Inspection zones
     st.markdown('<div class="sec-header">🚨 Zona Inspeksi</div>', unsafe_allow_html=True)
     z1, z2, z3 = st.columns(3)
     with z1:
@@ -944,21 +953,21 @@ if run_btn:
           <div class="value" style="font-size:1.1rem;">KP {max(0,fe-3):.1f} – {fe+3:.1f}</div>
           <div class="sub">6 km focus area</div></div>""", unsafe_allow_html=True)
 
-    # ── Charts ──
+    # Charts
     st.markdown('<div class="sec-header">📈 Visualisasi Analisis</div>', unsafe_allow_html=True)
     fig = make_plots(analyzer, results)
     st.pyplot(fig, use_container_width=True)
     plt.close(fig)
 
-    # ── Export ──
+    # Export
     st.markdown('<div class="sec-header">💾 Export</div>', unsafe_allow_html=True)
     exp_df = pd.DataFrame({
-        'KP (km)': analyzer.locations,
-        'Normal P (psi)': analyzer.normal_p,
-        'Drop P (psi)': analyzer.drop_p,
-        'Delta P (psi)': analyzer.delta_p,
+        'KP (km)':         analyzer.locations,
+        'Normal P (psi)':  analyzer.normal_p,
+        'Drop P (psi)':    analyzer.drop_p,
+        'Delta P (psi)':   analyzer.delta_p,
         '|Delta P| (psi)': analyzer.abs_delta_p,
-        'Ratio (%)': analyzer.pressure_ratio,
+        'Ratio (%)':       analyzer.pressure_ratio,
         'Suspicion Index': si,
     })
     summary = pd.DataFrame([{
